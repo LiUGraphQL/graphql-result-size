@@ -1,7 +1,7 @@
 var _ = require('lodash');
 var Hashtable = require('jshashtable');
 var HashTableArrays = require('./hashtable');
-var parse = require('./queryParser');
+var deleteKey = require('key-del');
 var {
   GraphQLError
 } = require('graphql');
@@ -91,7 +91,7 @@ const queryCalculator = (g, maxSize, validationContext) => {
 
     var labels = new Hashtable();
     var sizeMap = new HashTableArrays();
-    let query = parse(validationContext.getDocument().definitions[0].selectionSet.selections);
+    var query = deleteKey(validationContext.getDocument().definitions[0].selectionSet.selections, 'loc');
     let queryType = validationContext.getSchema().getQueryType();
     const rootNode = getRootNode(g, queryType);
 

@@ -18,7 +18,8 @@
   "homepage": "https://github.com/timandersson/graphql-query-calculator#readme",
   "dependencies": {
     "jshashtable": "^0.1.0",
-    "lodash": "^4.17.4"
+    "lodash": "^4.17.4",
+    "key-del": "^1.3.0"
   },
   "peerDependencies": {
     "graphql": "^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0"
