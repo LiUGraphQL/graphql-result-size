@@ -1,0 +1,19 @@
+{
+  "name": "graphql-query-calculator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "calculate.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timandersson/graphql-query-calculator.git"
+  },
+  "author": "Tim Andersson",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/timandersson/graphql-query-calculator/issues"
+  },
+  "homepage": "https://github.com/timandersson/graphql-query-calculator#readme"
+}
