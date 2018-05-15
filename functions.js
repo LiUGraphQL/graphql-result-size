@@ -33,8 +33,13 @@ var getRootNode = (graph, queryType) => {
   return new Node(0, queryType);
 };
 
+var nodeType = (graph, node) => {
+  return node.table;
+};
+
 module.exports = {
   Node,
   getEdges,
-  getRootNode
+  getRootNode,
+  nodeType
 };

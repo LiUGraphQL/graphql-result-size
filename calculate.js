@@ -7,7 +7,8 @@ var {
 } = require('graphql');
 var {
   getEdges,
-  getRootNode
+  getRootNode,
+  nodeType
 } = require('./functions');
 
 
@@ -70,7 +71,18 @@ const queryCalculator = (g, maxSize, validationContext) => {
                 return calculate(item, query[0].selectionSet.selections, currParent);
               }));
             });
+
+        } else if (query[0].kind === 'InlineFragment') {
+          //console.log('InlineFragmentQuery:C3');
+          let onType = query[0].typeCondition.name.value;
+          if (nodeType(g, u) === onType) {
+            sizeMap.add([u, query], sizeMap.ret([u, query[0].selectionSet.selections]));
+            return calculate(u, query[0].selectionSet.selections, validationContext.getSchema().getType(onType));
+          } else {
+            return Promise.resolve();
+          }
         }
+        
       } else {
         //  console.log('query exists in labels');
         return Promise.resolve();
@@ -83,13 +95,10 @@ const queryCalculator = (g, maxSize, validationContext) => {
     let queryType = validationContext.getSchema().getQueryType();
     const rootNode = getRootNode(g, queryType);
 
-
     return calculate(rootNode, query, queryType)
       .then(() => {
         const querySize = arrSum(sizeMap.ret([rootNode, query]));
         console.log('Size of result: ' + querySize);
-        //console.log(sizeMap.arrs);
-        //console.log(labels.keys());
         if (querySize > maxSize) {
           validationContext.reportError(
             new GraphQLError(
