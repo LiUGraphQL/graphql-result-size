@@ -6,7 +6,8 @@ var {
   GraphQLError
 } = require('graphql');
 var {
-  getEdges
+  getEdges,
+  getRootNode
 } = require('./functions');
 
 
@@ -54,8 +55,7 @@ const queryCalculator = (g, maxSize, validationContext) => {
           //  console.log('ListQuery:C2');
           let fieldDef = parent.getFields()[query[0].name.value];
           let currParent = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType : fieldDef.type;
-          const directives = fieldDef.astNode.directives[0];
-          return getEdges(g, query[0], u, directives)
+          return getEdges(g, query[0], u, fieldDef)
             .then(result => {
               if (fieldDef.astNode.type.kind === 'ListType') {
                 sizeMap.add([u, query], 4);
@@ -65,10 +65,9 @@ const queryCalculator = (g, maxSize, validationContext) => {
                 sizeMap.add([u, query], 3);
               }
               return Promise.all(result.map(item => {
-                let v = new Node(item.id, currParent);
                 sizeMap.add([u, query], 2);
-                sizeMap.add([u, query], sizeMap.ret([v, query[0].selectionSet.selections]));
-                return calculate(v, query[0].selectionSet.selections, currParent);
+                sizeMap.add([u, query], sizeMap.ret([item, query[0].selectionSet.selections]));
+                return calculate(item, query[0].selectionSet.selections, currParent);
               }));
             });
         }
@@ -78,25 +77,14 @@ const queryCalculator = (g, maxSize, validationContext) => {
       }
     };
 
-    // eslint-disable-next-line no-inner-declarations
-    function Node(x, y) {
-      this.id = x;
-      this.table = y;
-    }
-
-    Node.prototype.equals = function(obj) {
-      return (obj instanceof Node) &&
-        (obj.id === this.id) &&
-        (obj.table === this.table);
-    };
-
     var labels = new Hashtable();
     var sizeMap = new HashTable2();
     let query = parse(validationContext.getDocument().definitions[0].selectionSet.selections);
-    const rootNode = new Node(0, 'Query'); //getRootNode(g);
+    let queryType = validationContext.getSchema().getQueryType();
+    const rootNode = getRootNode(g, queryType);
 
 
-    return calculate(rootNode, query, validationContext.getSchema().getQueryType())
+    return calculate(rootNode, query, queryType)
       .then(() => {
         const querySize = arrSum(sizeMap.ret([rootNode, query]));
         console.log('Size of result: ' + querySize);
