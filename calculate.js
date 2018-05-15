@@ -1,6 +1,6 @@
 var _ = require('lodash');
 var Hashtable = require('jshashtable');
-var HashTable2 = require('./hashtable');
+var HashTableArrays = require('./hashtable');
 var parse = require('./queryParser');
 var {
   GraphQLError
@@ -82,7 +82,7 @@ const queryCalculator = (g, maxSize, validationContext) => {
             return Promise.resolve();
           }
         }
-        
+
       } else {
         //  console.log('query exists in labels');
         return Promise.resolve();
@@ -90,7 +90,7 @@ const queryCalculator = (g, maxSize, validationContext) => {
     };
 
     var labels = new Hashtable();
-    var sizeMap = new HashTable2();
+    var sizeMap = new HashTableArrays();
     let query = parse(validationContext.getDocument().definitions[0].selectionSet.selections);
     let queryType = validationContext.getSchema().getQueryType();
     const rootNode = getRootNode(g, queryType);

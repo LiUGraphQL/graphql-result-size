@@ -1,25 +1,24 @@
-function HashTable2() {
-  //this.hashes = {};
-  this.arrs = {};
+function HashTableArrays() {
+  this.hashes = {};
 }
 
-HashTable2.prototype = {
-  constructor: HashTable2,
+HashTableArrays.prototype = {
+  constructor: HashTableArrays,
 
   add: function(key, value) {
-    if(!(JSON.stringify(key) in this.arrs)){
-      this.arrs[JSON.stringify(key)] = [];
+    if (!(JSON.stringify(key) in this.hashes)) {
+      this.hashes[JSON.stringify(key)] = [];
     }
-    this.arrs[JSON.stringify(key)].push(value);
+    this.hashes[JSON.stringify(key)].push(value);
   },
 
   ret: function(key) {
-    if(!(JSON.stringify(key) in this.arrs)){
-      this.arrs[JSON.stringify(key)] = [];
+    if (!(JSON.stringify(key) in this.hashes)) {
+      this.hashes[JSON.stringify(key)] = [];
     }
-    return this.arrs[JSON.stringify(key)];
+    return this.hashes[JSON.stringify(key)];
   }
 
 };
 
-module.exports = HashTable2;
+module.exports = HashTableArrays;
