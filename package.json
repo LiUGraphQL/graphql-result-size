@@ -15,5 +15,8 @@
   "bugs": {
     "url": "https://github.com/timandersson/graphql-query-calculator/issues"
   },
-  "homepage": "https://github.com/timandersson/graphql-query-calculator#readme"
+  "homepage": "https://github.com/timandersson/graphql-query-calculator#readme",
+  "dependencies": {
+    "lodash": "^4.17.4"
+  }
 }
