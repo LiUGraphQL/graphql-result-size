@@ -1,5 +1,6 @@
 {
   "name": "graphql-query-calculator",
+  "private": true,
   "version": "1.0.0",
   "description": "",
   "main": "calculate.js",
@@ -8,14 +9,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/timandersson/graphql-query-calculator.git"
+    "url": "git+https://github.com/LiUGraphQL/graphql-query-calculator.git"
   },
   "author": "Tim Andersson",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/timandersson/graphql-query-calculator/issues"
+    "url": "https://github.com/LiUGraphQL/graphql-query-calculator/issues"
   },
-  "homepage": "https://github.com/timandersson/graphql-query-calculator#readme",
+  "homepage": "https://github.com/LiUGraphQL/graphql-query-calculator#readme",
   "dependencies": {
     "jshashtable": "^0.1.0",
     "lodash": "^4.17.4",
