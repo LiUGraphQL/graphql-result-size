@@ -22,13 +22,13 @@ To employ the module it needs to be included in the Javascript source code first
 var queryCalculator = require("graphql-query-calculator")
 ```
 
-The functionality of the module can now be envoked as **queryCalculator(db, threshold, validationContext )** with the following three arguments:
+The functionality of the module can now be envoked as **queryCalculator(db, threshold, validationContext)** with the following three arguments:
 
 * **db** is a context object for querying the database back-end (this can be the same context object as passed to the server when started);
 * **threshold** is a value for the size of response objects that are considered to be too big;
 * **validationContext** is an instance of the GraphQL [`validationContext`](https://github.com/graphql/graphql-js/blob/master/src/validation/ValidationContext.js) class.
 
-The idea is to envoke the function between the GraphQL validation and execution steps. Then, the function calculates the size of the response object of the query. This size is printed to the server console. If this size is above the given `threshold` value, then the function adds a GraphQL error to the given `validationContext` object. Finally, the function returns the `validationContext` object (with or without the additional error).
+The idea is to envoke the function between the ordinary GraphQL validation step and the GraphQL execution step. Then, the function calculates the size of the response object of the query in the `validationContext` object. This size is printed to the server console. If this size is above the given `threshold` value, then the function adds a GraphQL error to the given `validationContext` object. Finally, the function returns the `validationContext` object (with or without the additional error).
 
 The recommended use is to put the GraphQL execution function in the callback of the result size calculation (as illustrated in the following code snippet). In this way, the GraphQL server continues with the execution step only if no error is raised.
 
