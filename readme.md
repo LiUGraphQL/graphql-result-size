@@ -1,4 +1,4 @@
-# GraphQL Query Calculator
+# GraphQL Result Size Calculator
 This is a [Node.js](https://nodejs.org/en/) module provides a prototypical implementation of an algorithm that calculates the size of GraphQL response objects. Hence, this module can be used to check whether the size of the response to a GraphQL query exceeds a given threshold. In this sense, the module should be used as a dependency in GraphQL server frameworks that execute the server-side runtime process of GraphQL.
 
 The result size-calculation algorithm implemented in this module has been introduced in the following research paper.
@@ -11,7 +11,7 @@ The result size-calculation algorithm implemented in this module has been introd
 This Node.js module is *not* published at the [npm registry](https://www.npmjs.com/). Therefore, the module can be installed either by cloning and installing locally or by using npm with the github remote url.
 
 ```sh
-$ npm install github:LiUGraphQL/graphql-query-calculator
+$ npm install github:LiUGraphQL/graphql-result-size
 ```
 
 ## API
@@ -19,10 +19,10 @@ $ npm install github:LiUGraphQL/graphql-query-calculator
 To employ the module it needs to be included in the Javascript source code first:
 
 ```js
-var queryCalculator = require("graphql-query-calculator")
+var sizeCalculator = require("graphql-result-size")
 ```
 
-The functionality of the module can now be envoked as **queryCalculator(db, threshold, validationContext)** with the following three arguments:
+The functionality of the module can now be envoked as **sizeCalculator(db, threshold, validationContext)** with the following three arguments:
 
 * **db** is a context object for querying the database back-end (this can be the same context object as passed to the server when started);
 * **threshold** is a value for the size of response objects that are considered to be too big;
@@ -33,7 +33,7 @@ The idea is to envoke the function between the ordinary GraphQL validation step 
 The recommended use is to put the GraphQL execution function in the callback of the result size calculation (as illustrated in the following code snippet). In this way, the GraphQL server continues with the execution step only if no error is raised.
 
 ```js
-  return queryCalculator(context, 10000000, validationContext).then(valcontext => {
+  return sizeCalculator(context, 10000000, validationContext).then(valcontext => {
             if(valcontext.getErrors().length){
                 return Promise.resolve({ errors: format(valcontext.getErrors()) });
             }
@@ -49,5 +49,5 @@ The file `functions.js` is assumed to provide the functionality that is specific
 
 * [ ] Support for a field returning a sequence of scalars
 * [ ] Move the calculate function out of the wrapper
-* [ ] Back-end specific functions as argument to `queryCalculator`
+* [ ] Back-end specific functions as argument to `sizeCalculator`
 * [ ] Test suite
