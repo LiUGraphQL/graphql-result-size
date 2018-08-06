@@ -1,5 +1,5 @@
 /*!
- * graphql-query-calculator
+ * graphql-result-size
  * Copyright(c) 2018 Tim Andersson
  */
 
