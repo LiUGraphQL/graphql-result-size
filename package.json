@@ -1,5 +1,5 @@
 {
-  "name": "graphql-query-calculator",
+  "name": "graphql-result-size",
   "private": true,
   "version": "1.0.0",
   "description": "",
@@ -9,14 +9,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LiUGraphQL/graphql-query-calculator.git"
+    "url": "git+https://github.com/LiUGraphQL/graphql-result-size.git"
   },
   "author": "Tim Andersson",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/LiUGraphQL/graphql-query-calculator/issues"
+    "url": "https://github.com/LiUGraphQL/graphql-result-size/issues"
   },
-  "homepage": "https://github.com/LiUGraphQL/graphql-query-calculator#readme",
+  "homepage": "https://github.com/LiUGraphQL/graphql-result-size#readme",
   "dependencies": {
     "jshashtable": "^0.1.0",
     "lodash": "^4.17.4",
