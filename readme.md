@@ -43,7 +43,9 @@ The recommended use is to put the GraphQL execution function in the callback of 
 
 ## Configuration
 
-The file `functions.js` is assumed to provide the functionality that is specific to the database back-end being used. In the given form, the file contains some example code. This example code has to be adapted / replaced before this module can be used in practice. What the functions in the file are supposed to do what they are expected to return is specified in the file.
+The file `functions.js` is assumed to provide the functionality that is specific to the database back-end being used. In the given form, the file contains some example code that works for [the SQLite-based GraphQL server that we have used for experiments](https://github.com/LiUGraphQL/experiment-tim).
+
+Hence, to use this module for other GraphQL servers, this example code has to be adapted/replaced. What the functions in the file are supposed to do and what they are expected to return is specified in the file.
 
 ## Todo
 
