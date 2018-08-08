@@ -12,7 +12,7 @@
     "url": "git+https://github.com/LiUGraphQL/graphql-result-size.git"
   },
   "author": "Tim Andersson",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/LiUGraphQL/graphql-result-size/issues"
   },
