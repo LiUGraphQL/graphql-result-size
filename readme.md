@@ -1,10 +1,11 @@
 # GraphQL Result Size Calculator
 This is a [Node.js](https://nodejs.org/en/) module that provides a prototypical implementation of an algorithm that calculates the *exact* size of GraphQL response objects. Hence, this module can be used to check whether the size of the response to a GraphQL query exceeds a given threshold. In this sense, the module should be used as a dependency in GraphQL server frameworks that execute the server-side runtime process of GraphQL.
 
-The result size-calculation algorithm implemented in this module has been introduced in the following research paper.
+The result-size calculation algorithm implemented in this module has been introduced in the following research paper.
 
 * Olaf Hartig and Jorge Pérez: Semantics and Complexity of GraphQL. In Proceedings of The Web Conference 2018. (download [preprint of the paper](http://olafhartig.de/files/HartigPerez_WWW2018_Preprint.pdf))
 
+Since this research paper is pretty dense and math-heavy, you may first want to read a more [lightweight, high-level summary of the paper](http://blog.liu.se/olafhartig/2018/08/08/lightweight-summary-of-our-paper-semantics-and-complexity-of-graphql/). This summary also contains an example that demonstrates the motivation for checking the size of GraphQL response objects before starting to produce them, as well as an example-based description of our result-size calculation algorithm.
 
 ## Installation
 
