@@ -7,6 +7,10 @@ The result-size calculation algorithm implemented in this module has been introd
 
 Since this research paper is pretty dense and math-heavy, you may first want to read a more [lightweight, high-level summary of the paper](http://blog.liu.se/olafhartig/2018/08/08/lightweight-summary-of-our-paper-semantics-and-complexity-of-graphql/). This summary also contains an example that demonstrates the motivation for checking the size of GraphQL response objects before starting to produce them, as well as an example-based description of our result-size calculation algorithm.
 
+The prototypical implementation in this repo was developed in the context of the following Bachelor thesis.
+
+* Tim Andersson: [Result size calculation for Facebook's GraphQL query language](http://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-150026).
+
 ## Installation
 
 This Node.js module is *not* published at the [npm registry](https://www.npmjs.com/). Therefore, the module can be installed either by cloning and installing locally or by using npm with the github remote url.
