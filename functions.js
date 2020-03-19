@@ -17,52 +17,26 @@ Node.prototype.equals = function(obj) {
     (obj.table === this.table);
 };
 
-/**
- * Given a context object for the back-end, query, node and definition
- * of the field queried from the GraphQL Schema, query the back-end to retrieve
- * the nodes sharing the relationship.
- * Output should be an array of nodes of the speficied Node Representation
- */
-var getEdges = (db, query, u, fieldDef) => {
-  const directives = fieldDef.astNode.directives[0];
-  let table = directives.name.value;
-  let u_id;
-  let limit;
-  let id = directives.arguments[0].value.value;
-  let relation = directives.arguments[1].value.value;
-  let type = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType : fieldDef.type;
-
-  if (query.arguments.length > 0) {
-    if (query.arguments[0].name.value == 'limit') {
-      limit = query.arguments[0].value.value;
-      u_id = u.id;
-    } else {
-      u_id = query.arguments[0].value.value;
-    }
-  } else {
-    u_id = u.id;
-  }
-
-  return db.db.all('SELECT ' + id + ' as id FROM ' + table + ' WHERE ' + relation + ' = ? ' + (limit ? ' LIMIT ' + limit : ''), u_id).then((result) => {
-    return result.map(item => {
-      return new Node(item.id, type);
-    });
-  });
-};
-
 //Return a new instance of a Node object, unique representation of the root node
 var getRootNode = (db, queryType) => {
   return new Node(0, queryType);
 };
 
 //Return the type of the given node, output should be a GraphQLType object
-var nodeType = (db, node) => {
+var nodeType = (node) => {
   return node.table;
+};
+
+// Create a new node
+var createNode = (item, fieldDef) => {
+  let id = item.nr;
+  let type = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType : fieldDef.type;
+  return new Node(id, type);
 };
 
 module.exports = {
   Node,
-  getEdges,
+  createNode,
   getRootNode,
   nodeType
 };

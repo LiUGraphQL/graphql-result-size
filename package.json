@@ -18,7 +18,6 @@
   },
   "homepage": "https://github.com/LiUGraphQL/graphql-result-size#readme",
   "dependencies": {
-    "jshashtable": "^0.1.0",
     "lodash": "^4.17.4",
     "key-del": "^1.3.0"
   },
