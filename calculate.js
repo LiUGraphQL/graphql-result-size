@@ -10,7 +10,7 @@
  * @public
  */
 
-module.exports = {queryCalculator, produceResult, formatResult};
+module.exports = {queryCalculator, produceResult};
 
 /**
  * Module dependencies.
