@@ -197,6 +197,7 @@ function initializeDataStructures(sizeMap, results, stringNodeQuery){
 function calculateAllSubqueries(structures, query, stringNodeQuery, u, calculationContext, path){
   return Promise.all(query.map(function(subquery, index) {
     if (index !== 0) {
+      structures.sizeMap.get(stringNodeQuery).push(1);
       structures.results.get(stringNodeQuery).push(",");
     }
     let stringNodeSubquery = JSON.stringify([u, [subquery]]);
