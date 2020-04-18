@@ -29,7 +29,7 @@ var nodeType = (node) => {
 
 // Create a new node
 var createNode = (item, fieldDef) => {
-  let id = item.nr;
+  let id = item;
   let type = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType : fieldDef.type;
   return new Node(id, type);
 };
