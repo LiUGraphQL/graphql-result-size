@@ -1,8 +1,4 @@
-
-/**
- * Example code in the functions should be replaced with code specific to the
- * back-end used.
- */
+const _ = require('lodash');
 
 //Representation of a node, unique to the back-end
 function Node(x, y) {
@@ -19,7 +15,7 @@ Node.prototype.equals = function(obj) {
 
 //Return a new instance of a Node object, unique representation of the root node
 var getRootNode = (db, queryType) => {
-  return new Node(0, queryType);
+  return new Node(0, queryType.name);
 };
 
 //Return the type of the given node, output should be a GraphQLType object
