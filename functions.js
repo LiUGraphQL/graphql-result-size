@@ -30,7 +30,13 @@ var nodeType = (node) => {
 // Create a new node
 var createNode = (item, fieldDef) => {
   let id = item;
-  let type = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType : fieldDef.type;
+  let fieldTypes = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType._fields : fieldDef.type._fields;
+  _.forOwn(fieldTypes, type => {
+    if (type.type.name === 'ID') {
+      id = item[type.name];
+    }
+  });
+  let type = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType.name : fieldDef.type.name;
   return new Node(id, type);
 };
 
