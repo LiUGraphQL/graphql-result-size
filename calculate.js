@@ -204,6 +204,11 @@ function calculateAllSubqueries(structures, query, stringNodeQuery, u, calculati
     structures.results.get(stringNodeQuery).push([stringNodeSubquery]);
     return calculate(structures, u, [subquery], calculationContext, path)
     .then(x => {
+		querySize=arrSum(structures.sizeMap.get(stringNodeQuery));
+		console.log(querySize);
+		if(querySize>=myThreshold){
+        return false;
+      }else{
       structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringNodeSubquery));
       return x;
     });
