@@ -42,6 +42,8 @@ const _execution = require('graphql/execution');
  * @param  {object} options           
  * @return {object}                   returns the query result in JSON format
  */
+ let querySize;
+ let myThreshold=200;
 function queryCalculator(db, threshold, validationContext, options) {
   try {
     /* Only run for single queries */
@@ -205,7 +207,6 @@ function calculateAllSubqueries(structures, query, stringNodeQuery, u, calculati
     return calculate(structures, u, [subquery], calculationContext, path)
     .then(x => {
 		querySize=arrSum(structures.sizeMap.get(stringNodeQuery));
-		console.log(querySize);
 		if(querySize>=myThreshold){
         return false;
       }else{
@@ -310,8 +311,13 @@ function calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calcu
   structures.results.get(stringNodeQuery).push("}");
   return calculate(structures, relatedNode, query[0].selectionSet.selections, calculationContext, path)
   .then(x => {
+	querySize=arrSum(structures.sizeMap.get(stringNodeQuery));
+    if(querySize>=myThreshold){
+        return false;
+    }else{
     structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringRelatedNodeSubquery));
-    return x;               
+    return x;  
+	}	
   });
 }
 
@@ -323,8 +329,13 @@ function calculateInlineFragment(structures, stringNodeQuery, u, query, calculat
     calculationContext.queryType = fieldInfo.exeContext.schema.getType(onType);
     return calculate(structures, u, query[0].selectionSet.selections, calculationContext, path)
     .then (x => {
+		querySize=arrSum(structures.sizeMap.get(stringNodeQuery));
+		if(querySize>=myThreshold){
+			return false;
+		}else{
       structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringNodeSubquery));
       return x;
+		}
     });
   } else {
     return Promise.resolve();
