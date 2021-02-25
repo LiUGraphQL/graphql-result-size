@@ -42,9 +42,9 @@ const _execution = require('graphql/execution');
  * @param  {object} options           
  * @return {object}                   returns the query result in JSON format
  */
- let querySize;
- let myThreshold=200;
+ let myThreshold;
 function queryCalculator(db, threshold, validationContext, options) {
+  myThreshold=threshold;
   try {
     /* Only run for single queries */
     if (_.size(validationContext.getDocument().definitions) > 1) {
@@ -206,12 +206,13 @@ function calculateAllSubqueries(structures, query, stringNodeQuery, u, calculati
     structures.results.get(stringNodeQuery).push([stringNodeSubquery]);
     return calculate(structures, u, [subquery], calculationContext, path)
     .then(x => {
-		querySize=arrSum(structures.sizeMap.get(stringNodeQuery));
-		if(querySize>=myThreshold){
+		let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
+		if(queryResultSize>=myThreshold){
         return false;
       }else{
       structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringNodeSubquery));
       return x;
+	  }
     });
   }));
 }
@@ -311,8 +312,8 @@ function calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calcu
   structures.results.get(stringNodeQuery).push("}");
   return calculate(structures, relatedNode, query[0].selectionSet.selections, calculationContext, path)
   .then(x => {
-	querySize=arrSum(structures.sizeMap.get(stringNodeQuery));
-    if(querySize>=myThreshold){
+	let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
+    if(queryResultSize>=myThreshold){
         return false;
     }else{
     structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringRelatedNodeSubquery));
@@ -329,8 +330,8 @@ function calculateInlineFragment(structures, stringNodeQuery, u, query, calculat
     calculationContext.queryType = fieldInfo.exeContext.schema.getType(onType);
     return calculate(structures, u, query[0].selectionSet.selections, calculationContext, path)
     .then (x => {
-		querySize=arrSum(structures.sizeMap.get(stringNodeQuery));
-		if(querySize>=myThreshold){
+		let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
+		if(queryResultSize>=myThreshold){
 			return false;
 		}else{
       structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringNodeSubquery));
