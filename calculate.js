@@ -42,9 +42,7 @@ const _execution = require('graphql/execution');
  * @param  {object} options           
  * @return {object}                   returns the query result in JSON format
  */
- let myThreshold;
 function queryCalculator(db, threshold, validationContext, options) {
-  myThreshold=threshold;
   try {
     /* Only run for single queries */
     if (_.size(validationContext.getDocument().definitions) > 1) {
@@ -80,7 +78,7 @@ function queryCalculator(db, threshold, validationContext, options) {
     const query = deleteKey(documentAST.definitions[0].selectionSet.selections, 'loc');
     const rootNode = getRootNode(db, calculationContext.queryType);
 
-    return calculate(structures, rootNode, query, calculationContext)
+    return calculate(structures, rootNode, query, calculationContext, undefined ,threshold)
       .then(() => {
         let stringNodeQuery = JSON.stringify([rootNode, query]);
         const querySize = arrSum(structures.sizeMap.get(stringNodeQuery));
@@ -124,7 +122,7 @@ function queryCalculator(db, threshold, validationContext, options) {
  * @return {promise}
  * @private
  */
-function calculate(structures, u, query, calculationContext, path) {
+function calculate(structures, u, query, calculationContext, path, threshold) {
   /* These three strings are used the data structures labels, sizeMap and results */
   let stringNodeQuery = JSON.stringify([u, query]);
   let stringQuery = JSON.stringify(query);
@@ -136,7 +134,7 @@ function calculate(structures, u, query, calculationContext, path) {
     initializeDataStructures(structures.sizeMap, structures.results, stringNodeQuery);
     if (query.length > 1) {
       /* The query consists of multiple subqueries [27] */
-      return calculateAllSubqueries(structures, query, stringNodeQuery, u, calculationContext, path);
+      return calculateAllSubqueries(structures, query, stringNodeQuery, u, calculationContext, path, threshold);
     } else if (!(query[0].selectionSet)) {
       /* The query consists of a single field [3] */
       structures.sizeMap.get(stringNodeQuery).push(3);
@@ -159,11 +157,11 @@ function calculate(structures, u, query, calculationContext, path) {
           structures.sizeMap.get(stringNodeQuery).push(3);
         }
         /* Recursively run the calculate function for every resulting edge [11-14] */
-        return calculateRelatedNodes(structures, src, stringNodeQuery, query, fieldDef, calculationContext, path);
+        return calculateRelatedNodes(structures, src, stringNodeQuery, query, fieldDef, calculationContext, path, threshold);
       });
     } else if (query[0].kind === 'InlineFragment') {
       /* The query consists of an inline fragment [22] */
-      return calculateInlineFragment(structures, stringNodeQuery, u, query, calculationContext, path);
+      return calculateInlineFragment(structures, stringNodeQuery, u, query, calculationContext, path, threshold);
     }
   } else {
     /* The query already exists in labels for this node */
@@ -196,7 +194,7 @@ function initializeDataStructures(sizeMap, results, stringNodeQuery){
   }
 }
 
-function calculateAllSubqueries(structures, query, stringNodeQuery, u, calculationContext, path){
+function calculateAllSubqueries(structures, query, stringNodeQuery, u, calculationContext, path, threshold){
   return Promise.all(query.map(function(subquery, index) {
     if (index !== 0) {
       structures.sizeMap.get(stringNodeQuery).push(1);
@@ -204,10 +202,10 @@ function calculateAllSubqueries(structures, query, stringNodeQuery, u, calculati
     }
     let stringNodeSubquery = JSON.stringify([u, [subquery]]);
     structures.results.get(stringNodeQuery).push([stringNodeSubquery]);
-    return calculate(structures, u, [subquery], calculationContext, path)
+    return calculate(structures, u, [subquery], calculationContext, path, threshold)
     .then(x => {
 		let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
-		if(queryResultSize>=myThreshold){
+		if(queryResultSize>=threshold){
         return false;
       }else{
       structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringNodeSubquery));
@@ -275,7 +273,7 @@ function formatScalarResult(result, fieldName){
   return value;
 }
 
-function calculateRelatedNodes(structures, src, stringNodeQuery, query, fieldDef, calculationContext, path){
+function calculateRelatedNodes(structures, src, stringNodeQuery, query, fieldDef, calculationContext, path, threshold){
   calculationContext.queryType = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType : fieldDef.type;;
   /* If multiple related nodes exist */
   if (Array.isArray(src)){
@@ -285,7 +283,7 @@ function calculateRelatedNodes(structures, src, stringNodeQuery, query, fieldDef
         structures.results.get(stringNodeQuery).push(",");
       }
       calculationContext.source = srcItem;
-      return calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path);
+      return calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path, threshold);
     }))
     .then(x => {
       structures.results.get(stringNodeQuery).push("]");
@@ -299,21 +297,21 @@ function calculateRelatedNodes(structures, src, stringNodeQuery, query, fieldDef
   /* If only a single related node exists */
   } else { 
     calculationContext.source = src;
-    return calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path);
+    return calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path, threshold);
   }
 }
 
-function calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path){
+function calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path, threshold){
   structures.sizeMap.get(stringNodeQuery).push(2);
   let relatedNode = createNode(calculationContext.source, fieldDef);
   let stringRelatedNodeSubquery = JSON.stringify([relatedNode, query[0].selectionSet.selections]);
   structures.results.get(stringNodeQuery).push("{");
   structures.results.get(stringNodeQuery).push([stringRelatedNodeSubquery]);
   structures.results.get(stringNodeQuery).push("}");
-  return calculate(structures, relatedNode, query[0].selectionSet.selections, calculationContext, path)
+  return calculate(structures, relatedNode, query[0].selectionSet.selections, calculationContext, path, threshold)
   .then(x => {
 	let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
-    if(queryResultSize>=myThreshold){
+    if(queryResultSize>=threshold){
         return false;
     }else{
     structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringRelatedNodeSubquery));
@@ -322,16 +320,16 @@ function calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calcu
   });
 }
 
-function calculateInlineFragment(structures, stringNodeQuery, u, query, calculationContext, path){
+function calculateInlineFragment(structures, stringNodeQuery, u, query, calculationContext, path, threshold){
   let onType = query[0].typeCondition.name.value;
   if (nodeType(u) === onType) {
     let stringNodeSubquery = JSON.stringify([u, query[0].selectionSet.selections]);
     structures.results.get(stringNodeQuery).push([stringNodeSubquery]);
     calculationContext.queryType = fieldInfo.exeContext.schema.getType(onType);
-    return calculate(structures, u, query[0].selectionSet.selections, calculationContext, path)
+    return calculate(structures, u, query[0].selectionSet.selections, calculationContext, path, threshold)
     .then (x => {
 		let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
-		if(queryResultSize>=myThreshold){
+		if(queryResultSize>=threshold){
 			return false;
 		}else{
       structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringNodeSubquery));
