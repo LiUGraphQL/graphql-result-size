@@ -143,7 +143,7 @@ function populateDataStructures(structures, u, query, calculationContext, path, 
     if (query.length > 1) {
       // The (sub)query is a concatenation of multiple (sub)queries
       // (this corresponds to line 46 in the pseudo code of the algorithm)
-      return calculateAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold);
+      return updateDataStructuresForAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold);
     }
     else if (!(query[0].selectionSet)) {
       // The (sub)query requests a single, scalar-typed field
@@ -207,21 +207,27 @@ function initializeDataStructures(sizeMap, resultsMap, curnodeAndQueryAsString){
   }
 }
 
-function calculateAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold){
+/*
+ * Updates the given data structures for all subqueries of the given (sub)query.
+ * This corresponds to lines 47-55 in the pseudo code of the algorithm.
+ */
+function updateDataStructuresForAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold){
   return Promise.all(query.map(function(subquery, index) {
     if (index !== 0) {
       structures.sizeMap.get(curnodeAndQueryAsString).push(1);
       structures.resultsMap.get(curnodeAndQueryAsString).push(",");
     }
-    let stringNodeSubquery = JSON.stringify([u, [subquery]]);
-    structures.resultsMap.get(curnodeAndQueryAsString).push([stringNodeSubquery]);
+    let curnodeAndSubqueryAsString = JSON.stringify([u, [subquery]]);
+    structures.resultsMap.get(curnodeAndQueryAsString).push([curnodeAndSubqueryAsString]);
+	 // get into the recursion for each subquery
     return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold)
     .then(x => {
 		let queryResultSize=arrSum(structures.sizeMap.get(curnodeAndQueryAsString));
 		if(queryResultSize>=sizethreshold){
         return false;
       }else{
-      structures.sizeMap.get(curnodeAndQueryAsString).push(structures.sizeMap.get(stringNodeSubquery));
+      structures.sizeMap.get(curnodeAndQueryAsString).push(structures.sizeMap.get(curnodeAndSubqueryAsString));
+      //structures.sizeMap.get(curnodeAndQueryAsString).push(arrSum(structures.sizeMap.get(curnodeAndSubqueryAsString)));
       return x;
 	  }
     });
