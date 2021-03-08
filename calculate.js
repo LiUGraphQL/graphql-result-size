@@ -224,13 +224,13 @@ function updateDataStructuresForAllSubqueries(structures, query, curnodeAndQuery
 	 // get into the recursion for each subquery
     return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold)
     .then(x => {
-		let queryResultSize=structures.sizeMap.get(curnodeAndQueryAsString);
-		if(queryResultSize>=sizethreshold){
+      let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString) + structures.sizeMap.get(curnodeAndSubqueryAsString);
+		structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
+      if (increasedSize >= sizethreshold) {
         return false;
-      }else{
-      structures.sizeMap.set(curnodeAndQueryAsString, queryResultSize + structures.sizeMap.get(curnodeAndSubqueryAsString));
-      return x;
-	  }
+      } else {
+        return x;
+	   }
     });
   }));
 }
@@ -245,10 +245,7 @@ function updateDataStructuresForScalarField(structures, curnodeAndQueryAsString,
   path = extendPath(path, fieldName);
   return resolveField(subquery, fieldDef, calculationContext, path)
   .then(result => {
-    let value = formatResultOfScalarTypedField(result, fieldName);
-    structures.resultsMap.get(curnodeAndQueryAsString).push("\"" + fieldName + "\"" + ":");
-    structures.resultsMap.get(curnodeAndQueryAsString).push(value);
-    structures.sizeMap.set(curnodeAndQueryAsString, structures.sizeMap.get(curnodeAndQueryAsString)+3);
+    updateDataStructuresForScalarFieldValue(structures, curnodeAndQueryAsString, result, fieldName);
     return Promise.resolve();
   });
 }
@@ -263,9 +260,11 @@ function resolveField(subquery, fieldDef, calculationContext, path){
   return Promise.resolve(resolveFn(calculationContext.source, args, calculationContext.exeContext.contextValue, info));
 }
 
-function formatResultOfScalarTypedField(result, fieldName){
+function updateDataStructuresForScalarFieldValue(structures, curnodeAndQueryAsString, result, fieldName){
   let value;
+  let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString);
   if (Array.isArray(result)) {
+    increasedSize += 2 + result.length;
     if (result.length <= 1) {
       result = result[0];
     } else {
@@ -275,6 +274,8 @@ function formatResultOfScalarTypedField(result, fieldName){
         }
       });
     }
+  } else {
+    increasedSize += 3;
   }
   if (typeof result === "object" && result !== null && !Array.isArray(result)){
     value = result[fieldName];
@@ -294,7 +295,10 @@ function formatResultOfScalarTypedField(result, fieldName){
   if (typeof value === "string"){
     value = "\"" + value + "\"";
   }
-  return value;
+  structures.resultsMap.get(curnodeAndQueryAsString).push("\"" + fieldName + "\"" + ":");
+  structures.resultsMap.get(curnodeAndQueryAsString).push(value);
+  structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
+  return increasedSize;
 }
 
 function calculateRelatedNodes(structures, src, curnodeAndQueryAsString, query, fieldDef, calculationContext, path, sizethreshold){
