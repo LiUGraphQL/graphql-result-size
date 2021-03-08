@@ -71,14 +71,14 @@ function queryCalculator(db, threshold, validationContext, options) {
     let structures = {
       labels : new Map(),
       sizeMap : new Map(),
-      results : new Map()
+      resultsMap : new Map()
     };
 
     /* Parse query to remove location properties */
     const query = deleteKey(documentAST.definitions[0].selectionSet.selections, 'loc');
     const rootNode = getRootNode(db, calculationContext.queryType);
 
-    return calculate(structures, rootNode, query, calculationContext, undefined ,threshold)
+    return populateDataStructures(structures, rootNode, query, calculationContext, undefined ,threshold)
       .then(() => {
         let stringNodeQuery = JSON.stringify([rootNode, query]);
         const querySize = arrSum(structures.sizeMap.get(stringNodeQuery));
@@ -90,7 +90,7 @@ function queryCalculator(db, threshold, validationContext, options) {
           );
         }
         let data = {
-          results : structures.results,
+          results : structures.resultsMap,
           validationContext : validationContext,
           index : stringNodeQuery
         };
@@ -105,8 +105,8 @@ function queryCalculator(db, threshold, validationContext, options) {
 }
 
 /**
- * calculate - A recursive function that calculates the size of a GraphQL query
- * and stores the result of every subquery in a structure called results.
+ * A recursive function that populates the given data structures to determine the result size of a GraphQL query
+ * and to produce that query result later.
  *
  * Based on an extended version of Algorithm 2 in the research paper "Semantics and Complexity of GraphQL"
  * by Olaf Hartig and Jorge Pérez. The extended version combines the calculation algorithm from the original
@@ -119,49 +119,62 @@ function queryCalculator(db, threshold, validationContext, options) {
  * @param  {object} query               (sub)query to be calculated
  * @param  {object} calculationContext  contains additional information needed for the calculation
  * @param  {object} path                contains the path from the root node to the current node
+ * @param  {number} sizethreshold       threshold for the result size; the recursive process gets terminated if the threshold is exceeded
  * @return {promise}
  * @private
  */
-function calculate(structures, u, query, calculationContext, path, threshold) {
-  /* These three strings are used the data structures labels, sizeMap and results */
-  let stringNodeQuery = JSON.stringify([u, query]);
-  let stringQuery = JSON.stringify(query);
-  let stringNode = JSON.stringify(u);
-  /* Check if query is already in labels for this node [1] */
-  if (!doQueryExistOnNode(structures.labels, stringNode, stringQuery)) {
-    /* Add query to labels [2] and initialize data structures if needed */
-    addQueryToLabels(structures.labels, stringNode, stringQuery);
-    initializeDataStructures(structures.sizeMap, structures.results, stringNodeQuery);
+function populateDataStructures(structures, u, query, calculationContext, path, sizethreshold) {
+  // The following three strings are used as keys in the data structures
+  // that are populated by the algorithm (labels, sizeMap, and resultsMap)
+  let curnodeAndQueryAsString = JSON.stringify([u, query]);
+  let subqueryAsString = JSON.stringify(query);
+  let curnodeAsString = JSON.stringify(u);
+  // Check whether the given (sub)query has already been considered for the
+  // given data node, which is recorded in the 'labels' data structure
+  // (this corresponds to line 1 in the pseudo code of the algorithm)
+  if (!queryAlreadyConsideredForNode(structures.labels, curnodeAsString, subqueryAsString)) {
+    // Record that the given (sub)query has been considered for the given data node
+    // (this corresponds to line 2 in the pseudo code of the algorithm)
+    markQueryAsConsideredForNode(structures.labels, curnodeAsString, subqueryAsString);
+    // ...and initialize the other two data structures
+    // (this is not explicitly captured in the pseudo code)
+    initializeDataStructures(structures.sizeMap, structures.resultsMap, curnodeAndQueryAsString);
+    // Now continue depending on the form of the given (sub)query.
     if (query.length > 1) {
-      /* The query consists of multiple subqueries [27] */
-      return calculateAllSubqueries(structures, query, stringNodeQuery, u, calculationContext, path, threshold);
-    } else if (!(query[0].selectionSet)) {
-      /* The query consists of a single field [3] */
-      structures.sizeMap.get(stringNodeQuery).push(3);
-      return getScalarField(structures.results, stringNodeQuery, query, calculationContext, path);
-      //return Promise.resolve();
-    } else if (query[0].kind === 'Field') {
-      /* The query consists of a field with a subselection [9] */
+      // The (sub)query is a concatenation of multiple (sub)queries
+      // (this corresponds to line 46 in the pseudo code of the algorithm)
+      return calculateAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold);
+    }
+    else if (!(query[0].selectionSet)) {
+      // The (sub)query requests a single, scalar-typed field
+      // (this corresponds to line 3 in the pseudo code of the algorithm)
+      return updateDataStructuresForScalarField(structures, curnodeAndQueryAsString, query[0], calculationContext, path);
+    }
+    else if (query[0].kind === 'Field') {
+      // The (sub)query requests a single field with a subselection
+      // (this corresponds to line 10 in the pseudo code of the algorithm)
       let fieldName = query[0].name.value;
       let fieldDef = calculationContext.queryType.getFields()[fieldName];
-      path = addPath(path, fieldName);
-      return getField(query, fieldDef, calculationContext, path)
+      path = extendPath(path, fieldName);
+      return resolveField(query[0], fieldDef, calculationContext, path)
       .then(src => {
-        structures.results.get(stringNodeQuery).push("\"" + fieldName + "\"" + ":");
+        structures.resultsMap.get(curnodeAndQueryAsString).push("\"" + fieldName + "\"" + ":");
         /* Add to sizeMap depending on the type of the field [15-21] */
         if (fieldDef.astNode.type.kind === 'ListType') {
-          structures.sizeMap.get(stringNodeQuery).push(4);
+          structures.sizeMap.get(curnodeAndQueryAsString).push(4);
         } else if (src != null) {
-          structures.sizeMap.get(stringNodeQuery).push(2);
+          structures.sizeMap.get(curnodeAndQueryAsString).push(2);
         } else {
-          structures.sizeMap.get(stringNodeQuery).push(3);
+          structures.sizeMap.get(curnodeAndQueryAsString).push(3);
         }
         /* Recursively run the calculate function for every resulting edge [11-14] */
-        return calculateRelatedNodes(structures, src, stringNodeQuery, query, fieldDef, calculationContext, path, threshold);
+        return calculateRelatedNodes(structures, src, curnodeAndQueryAsString, query, fieldDef, calculationContext, path, sizethreshold);
       });
-    } else if (query[0].kind === 'InlineFragment') {
-      /* The query consists of an inline fragment [22] */
-      return calculateInlineFragment(structures, stringNodeQuery, u, query, calculationContext, path, threshold);
+    }
+    else if (query[0].kind === 'InlineFragment') {
+      // The (sub)query is an inline fragment
+      // (this corresponds to line 40 in the pseudo code of the algorithm)
+      return calculateInlineFragment(structures, curnodeAndQueryAsString, u, query, calculationContext, path, sizethreshold);
     }
   } else {
     /* The query already exists in labels for this node */
@@ -169,62 +182,66 @@ function calculate(structures, u, query, calculationContext, path, threshold) {
   }
 }
 
-function doQueryExistOnNode(labels, stringNode, stringQuery){
-  return (_.some(labels.get(stringNode), function(o) {
-    return o === stringQuery;
+function queryAlreadyConsideredForNode(labels, curnodeAsString, subqueryAsString){
+  return (_.some(labels.get(curnodeAsString), function(o) {
+    return o === subqueryAsString;
   }));
 }
 
-function addQueryToLabels(labels, stringNode, stringQuery){
-  if (!labels.has(stringNode)) {
-    labels.set(stringNode, [stringQuery]);
+function markQueryAsConsideredForNode(labels, curnodeAsString, subqueryAsString){
+  if (!labels.has(curnodeAsString)) {
+    labels.set(curnodeAsString, [subqueryAsString]);
   } else {
-    labels.get(stringNode).push(stringQuery);
+    labels.get(curnodeAsString).push(subqueryAsString);
   }
 }
 
-/* Initializes the data structures sizeMap and results if they have not been initialized before */
-function initializeDataStructures(sizeMap, results, stringNodeQuery){
-  if (!sizeMap.has(stringNodeQuery)) {
-    sizeMap.set(stringNodeQuery, []);
+/* Initializes the data structures sizeMap and resultsMap if they have not been initialized before */
+function initializeDataStructures(sizeMap, resultsMap, curnodeAndQueryAsString){
+  if (!sizeMap.has(curnodeAndQueryAsString)) {
+    sizeMap.set(curnodeAndQueryAsString, []);
   }
   
-  if (!results.has(stringNodeQuery)) {
-    results.set(stringNodeQuery, []);
+  if (!resultsMap.has(curnodeAndQueryAsString)) {
+    resultsMap.set(curnodeAndQueryAsString, []);
   }
 }
 
-function calculateAllSubqueries(structures, query, stringNodeQuery, u, calculationContext, path, threshold){
+function calculateAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold){
   return Promise.all(query.map(function(subquery, index) {
     if (index !== 0) {
-      structures.sizeMap.get(stringNodeQuery).push(1);
-      structures.results.get(stringNodeQuery).push(",");
+      structures.sizeMap.get(curnodeAndQueryAsString).push(1);
+      structures.resultsMap.get(curnodeAndQueryAsString).push(",");
     }
     let stringNodeSubquery = JSON.stringify([u, [subquery]]);
-    structures.results.get(stringNodeQuery).push([stringNodeSubquery]);
-    return calculate(structures, u, [subquery], calculationContext, path, threshold)
+    structures.resultsMap.get(curnodeAndQueryAsString).push([stringNodeSubquery]);
+    return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold)
     .then(x => {
-		let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
-		if(queryResultSize>=threshold){
+		let queryResultSize=arrSum(structures.sizeMap.get(curnodeAndQueryAsString));
+		if(queryResultSize>=sizethreshold){
         return false;
       }else{
-      structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringNodeSubquery));
+      structures.sizeMap.get(curnodeAndQueryAsString).push(structures.sizeMap.get(stringNodeSubquery));
       return x;
 	  }
     });
   }));
 }
 
-/* Adds a field with a scalar value (leaf node) to the results structure */
-function getScalarField(results, stringNodeQuery, query, calculationContext, path){
-  let fieldName = query[0].name.value;
+/*
+ * Updates the given data structures for a scalar-typed field.
+ * This corresponds to lines 3-9 in the pseudo code of the algorithm.
+ */
+function updateDataStructuresForScalarField(structures, curnodeAndQueryAsString, subquery, calculationContext, path){
+  let fieldName = subquery.name.value;
   let fieldDef = calculationContext.queryType.getFields()[fieldName];
-  path = addPath(path, fieldName);
-  return getField(query, fieldDef, calculationContext, path)
+  path = extendPath(path, fieldName);
+  return resolveField(subquery, fieldDef, calculationContext, path)
   .then(result => {
-    let value = formatScalarResult(result, fieldName);
-    results.get(stringNodeQuery).push("\"" + fieldName + "\"" + ":");
-    results.get(stringNodeQuery).push(value);
+    let value = formatResultOfScalarTypedField(result, fieldName);
+    structures.resultsMap.get(curnodeAndQueryAsString).push("\"" + fieldName + "\"" + ":");
+    structures.resultsMap.get(curnodeAndQueryAsString).push(value);
+    structures.sizeMap.get(curnodeAndQueryAsString).push(3);
     return Promise.resolve();
   });
 }
@@ -232,14 +249,14 @@ function getScalarField(results, stringNodeQuery, query, calculationContext, pat
 /**
  * Builds the resolver info and args, then executes the corresponding resolver function.
  */ 
-function getField(query, fieldDef, calculationContext, path){
+function resolveField(subquery, fieldDef, calculationContext, path){
   let resolveFn = fieldDef.resolve || calculationContext.exeContext.fieldResolver;
   let info = _execution.buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, calculationContext.queryType, path);
-  let args = (0, _execution.getArgumentValues(fieldDef, query[0], calculationContext.exeContext.variableValues));
+  let args = (0, _execution.getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
   return Promise.resolve(resolveFn(calculationContext.source, args, calculationContext.exeContext.contextValue, info));
 }
 
-function formatScalarResult(result, fieldName){
+function formatResultOfScalarTypedField(result, fieldName){
   let value;
   if (Array.isArray(result)) {
     if (result.length <= 1) {
@@ -273,66 +290,66 @@ function formatScalarResult(result, fieldName){
   return value;
 }
 
-function calculateRelatedNodes(structures, src, stringNodeQuery, query, fieldDef, calculationContext, path, threshold){
+function calculateRelatedNodes(structures, src, curnodeAndQueryAsString, query, fieldDef, calculationContext, path, sizethreshold){
   calculationContext.queryType = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType : fieldDef.type;;
   /* If multiple related nodes exist */
   if (Array.isArray(src)){
-    structures.results.get(stringNodeQuery).push("[");
+    structures.resultsMap.get(curnodeAndQueryAsString).push("[");
     return Promise.all(src.map(function(srcItem, index) {
       if (index !== 0) {
-        structures.results.get(stringNodeQuery).push(",");
+        structures.resultsMap.get(curnodeAndQueryAsString).push(",");
       }
       calculationContext.source = srcItem;
-      return calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path, threshold);
+      return calculateSingleNode(structures, query, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold);
     }))
     .then(x => {
-      structures.results.get(stringNodeQuery).push("]");
+      structures.resultsMap.get(curnodeAndQueryAsString).push("]");
       return x;
     });
   /* If no related nodes exist */
   } else if (src == null){ 
-    structures.sizeMap.get(stringNodeQuery).push(2);
-    structures.results.get(stringNodeQuery).push("null");
+    structures.sizeMap.get(curnodeAndQueryAsString).push(2);
+    structures.resultsMap.get(curnodeAndQueryAsString).push("null");
     return Promise.resolve();
   /* If only a single related node exists */
   } else { 
     calculationContext.source = src;
-    return calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path, threshold);
+    return calculateSingleNode(structures, query, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold);
   }
 }
 
-function calculateSingleNode(structures, query, fieldDef, stringNodeQuery, calculationContext, path, threshold){
-  structures.sizeMap.get(stringNodeQuery).push(2);
+function calculateSingleNode(structures, query, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold){
+  structures.sizeMap.get(curnodeAndQueryAsString).push(2);
   let relatedNode = createNode(calculationContext.source, fieldDef);
   let stringRelatedNodeSubquery = JSON.stringify([relatedNode, query[0].selectionSet.selections]);
-  structures.results.get(stringNodeQuery).push("{");
-  structures.results.get(stringNodeQuery).push([stringRelatedNodeSubquery]);
-  structures.results.get(stringNodeQuery).push("}");
-  return calculate(structures, relatedNode, query[0].selectionSet.selections, calculationContext, path, threshold)
+  structures.resultsMap.get(curnodeAndQueryAsString).push("{");
+  structures.resultsMap.get(curnodeAndQueryAsString).push([stringRelatedNodeSubquery]);
+  structures.resultsMap.get(curnodeAndQueryAsString).push("}");
+  return populateDataStructures(structures, relatedNode, query[0].selectionSet.selections, calculationContext, path, sizethreshold)
   .then(x => {
-	let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
-    if(queryResultSize>=threshold){
+	let queryResultSize=arrSum(structures.sizeMap.get(curnodeAndQueryAsString));
+    if(queryResultSize>=sizethreshold){
         return false;
     }else{
-    structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringRelatedNodeSubquery));
+    structures.sizeMap.get(curnodeAndQueryAsString).push(structures.sizeMap.get(stringRelatedNodeSubquery));
     return x;  
 	}	
   });
 }
 
-function calculateInlineFragment(structures, stringNodeQuery, u, query, calculationContext, path, threshold){
+function calculateInlineFragment(structures, curnodeAndQueryAsString, u, query, calculationContext, path, sizethreshold){
   let onType = query[0].typeCondition.name.value;
   if (nodeType(u) === onType) {
     let stringNodeSubquery = JSON.stringify([u, query[0].selectionSet.selections]);
-    structures.results.get(stringNodeQuery).push([stringNodeSubquery]);
+    structures.resultsMap.get(curnodeAndQueryAsString).push([stringNodeSubquery]);
     calculationContext.queryType = fieldInfo.exeContext.schema.getType(onType);
-    return calculate(structures, u, query[0].selectionSet.selections, calculationContext, path, threshold)
+    return populateDataStructures(structures, u, query[0].selectionSet.selections, calculationContext, path, sizethreshold)
     .then (x => {
-		let queryResultSize=arrSum(structures.sizeMap.get(stringNodeQuery));
-		if(queryResultSize>=threshold){
+		let queryResultSize=arrSum(structures.sizeMap.get(curnodeAndQueryAsString));
+		if(queryResultSize>=sizethreshold){
 			return false;
 		}else{
-      structures.sizeMap.get(stringNodeQuery).push(structures.sizeMap.get(stringNodeSubquery));
+      structures.sizeMap.get(curnodeAndQueryAsString).push(structures.sizeMap.get(stringNodeSubquery));
       return x;
 		}
     });
@@ -341,7 +358,7 @@ function calculateInlineFragment(structures, stringNodeQuery, u, query, calculat
   }
 }
 
-function addPath(prev, key) {
+function extendPath(prev, key) {
   return { prev: prev, key: key };
 }
 
@@ -363,24 +380,24 @@ function arrSum(arr) {
   }, 0);
 }
 
-/** Produces the result from the results structure into a string.
+/** Produces the result from the resultsMap structure into a string.
  * index is a combination of a node and a query
- * each element in results is either a string or another index
+ * each element in resultsMap is either a string or another index
  * if the element is a string it is just added to the response
  * else it is another index, in which case the function is run recursively
  */
-function produceResult(results, index){
-  if (results == null){
+function produceResult(resultsMap, index){
+  if (resultsMap == null){
     return "";
   }
   let response = "";
-  results.get(index).forEach(element => {
+  resultsMap.get(index).forEach(element => {
     if (Array.isArray(element) && element.length > 1) {
       _.forEach(element, function(subElement) {
         response += subElement;
       });
     } else if (typeof element === "object" && element !== null){
-      response += produceResult(results, element[0]);
+      response += produceResult(resultsMap, element[0]);
     } else {
       response += element;
     }
