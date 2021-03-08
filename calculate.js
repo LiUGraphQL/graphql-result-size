@@ -32,7 +32,7 @@ const _execution = require('graphql/execution');
 /**
  * queryCalculator - calling function for the recursive calculation algorithm.
  *
- * Initializes the labels, sizeMap, and results maps, runs the calculate function
+ * Initializes the labels, sizeMap, and resultsMap maps, runs the calculate function
  * with the top level query and root node. Compares the threshold to the calculated
  * value and adds an error to the validationContext object if above this threshold.
  *
@@ -81,7 +81,7 @@ function queryCalculator(db, threshold, validationContext, options) {
     return populateDataStructures(structures, rootNode, query, calculationContext, undefined ,threshold)
       .then(() => {
         let stringNodeQuery = JSON.stringify([rootNode, query]);
-        const querySize = arrSum(structures.sizeMap.get(stringNodeQuery));
+        const querySize = structures.sizeMap.get(stringNodeQuery);
         console.log('Size of result: ' + querySize);
         if (querySize > threshold) {
           validationContext.reportError(
@@ -114,7 +114,7 @@ function queryCalculator(db, threshold, validationContext, options) {
  * underlying data source again. A detailed explanation of this algorithm can be found in the Master's thesis 
  * "Combining Result Size Estimation and Query Execution for the GraphQL Query Language" by Andreas Lundquist.
  *
- * @param  {object} structures          contains three map structures: labels, sizeMap and results
+ * @param  {object} structures          contains three map structures: labels, sizeMap and resultsMap
  * @param  {object} u                   node
  * @param  {object} query               (sub)query to be calculated
  * @param  {object} calculationContext  contains additional information needed for the calculation
@@ -160,13 +160,15 @@ function populateDataStructures(structures, u, query, calculationContext, path, 
       .then(src => {
         structures.resultsMap.get(curnodeAndQueryAsString).push("\"" + fieldName + "\"" + ":");
         /* Add to sizeMap depending on the type of the field [15-21] */
+		  let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString);
         if (fieldDef.astNode.type.kind === 'ListType') {
-          structures.sizeMap.get(curnodeAndQueryAsString).push(4);
+          increasedSize += 4;
         } else if (src != null) {
-          structures.sizeMap.get(curnodeAndQueryAsString).push(2);
+          increasedSize += 2;
         } else {
-          structures.sizeMap.get(curnodeAndQueryAsString).push(3);
+          increasedSize += 3;
         }
+        structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
         /* Recursively run the calculate function for every resulting edge [11-14] */
         return calculateRelatedNodes(structures, src, curnodeAndQueryAsString, query, fieldDef, calculationContext, path, sizethreshold);
       });
@@ -199,7 +201,7 @@ function markQueryAsConsideredForNode(labels, curnodeAsString, subqueryAsString)
 /* Initializes the data structures sizeMap and resultsMap if they have not been initialized before */
 function initializeDataStructures(sizeMap, resultsMap, curnodeAndQueryAsString){
   if (!sizeMap.has(curnodeAndQueryAsString)) {
-    sizeMap.set(curnodeAndQueryAsString, []);
+    sizeMap.set(curnodeAndQueryAsString, 0);
   }
   
   if (!resultsMap.has(curnodeAndQueryAsString)) {
@@ -214,7 +216,7 @@ function initializeDataStructures(sizeMap, resultsMap, curnodeAndQueryAsString){
 function updateDataStructuresForAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold){
   return Promise.all(query.map(function(subquery, index) {
     if (index !== 0) {
-      structures.sizeMap.get(curnodeAndQueryAsString).push(1);
+      structures.sizeMap.set(curnodeAndQueryAsString, structures.sizeMap.get(curnodeAndQueryAsString)+1);
       structures.resultsMap.get(curnodeAndQueryAsString).push(",");
     }
     let curnodeAndSubqueryAsString = JSON.stringify([u, [subquery]]);
@@ -222,12 +224,11 @@ function updateDataStructuresForAllSubqueries(structures, query, curnodeAndQuery
 	 // get into the recursion for each subquery
     return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold)
     .then(x => {
-		let queryResultSize=arrSum(structures.sizeMap.get(curnodeAndQueryAsString));
+		let queryResultSize=structures.sizeMap.get(curnodeAndQueryAsString);
 		if(queryResultSize>=sizethreshold){
         return false;
       }else{
-      structures.sizeMap.get(curnodeAndQueryAsString).push(structures.sizeMap.get(curnodeAndSubqueryAsString));
-      //structures.sizeMap.get(curnodeAndQueryAsString).push(arrSum(structures.sizeMap.get(curnodeAndSubqueryAsString)));
+      structures.sizeMap.set(curnodeAndQueryAsString, queryResultSize + structures.sizeMap.get(curnodeAndSubqueryAsString));
       return x;
 	  }
     });
@@ -247,7 +248,7 @@ function updateDataStructuresForScalarField(structures, curnodeAndQueryAsString,
     let value = formatResultOfScalarTypedField(result, fieldName);
     structures.resultsMap.get(curnodeAndQueryAsString).push("\"" + fieldName + "\"" + ":");
     structures.resultsMap.get(curnodeAndQueryAsString).push(value);
-    structures.sizeMap.get(curnodeAndQueryAsString).push(3);
+    structures.sizeMap.set(curnodeAndQueryAsString, structures.sizeMap.get(curnodeAndQueryAsString)+3);
     return Promise.resolve();
   });
 }
@@ -314,7 +315,7 @@ function calculateRelatedNodes(structures, src, curnodeAndQueryAsString, query, 
     });
   /* If no related nodes exist */
   } else if (src == null){ 
-    structures.sizeMap.get(curnodeAndQueryAsString).push(2);
+    structures.sizeMap.set(curnodeAndQueryAsString, structures.sizeMap.get(curnodeAndQueryAsString)+2);
     structures.resultsMap.get(curnodeAndQueryAsString).push("null");
     return Promise.resolve();
   /* If only a single related node exists */
@@ -325,7 +326,7 @@ function calculateRelatedNodes(structures, src, curnodeAndQueryAsString, query, 
 }
 
 function calculateSingleNode(structures, query, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold){
-  structures.sizeMap.get(curnodeAndQueryAsString).push(2);
+  structures.sizeMap.set(curnodeAndQueryAsString, structures.sizeMap.get(curnodeAndQueryAsString)+2);
   let relatedNode = createNode(calculationContext.source, fieldDef);
   let stringRelatedNodeSubquery = JSON.stringify([relatedNode, query[0].selectionSet.selections]);
   structures.resultsMap.get(curnodeAndQueryAsString).push("{");
@@ -333,11 +334,11 @@ function calculateSingleNode(structures, query, fieldDef, curnodeAndQueryAsStrin
   structures.resultsMap.get(curnodeAndQueryAsString).push("}");
   return populateDataStructures(structures, relatedNode, query[0].selectionSet.selections, calculationContext, path, sizethreshold)
   .then(x => {
-	let queryResultSize=arrSum(structures.sizeMap.get(curnodeAndQueryAsString));
+	let queryResultSize=structures.sizeMap.get(curnodeAndQueryAsString);
     if(queryResultSize>=sizethreshold){
         return false;
     }else{
-    structures.sizeMap.get(curnodeAndQueryAsString).push(structures.sizeMap.get(stringRelatedNodeSubquery));
+    structures.sizeMap.set(curnodeAndQueryAsString, queryResultSize + structures.sizeMap.get(stringRelatedNodeSubquery));
     return x;  
 	}	
   });
@@ -351,11 +352,11 @@ function calculateInlineFragment(structures, curnodeAndQueryAsString, u, query, 
     calculationContext.queryType = fieldInfo.exeContext.schema.getType(onType);
     return populateDataStructures(structures, u, query[0].selectionSet.selections, calculationContext, path, sizethreshold)
     .then (x => {
-		let queryResultSize=arrSum(structures.sizeMap.get(curnodeAndQueryAsString));
+		let queryResultSize=structures.sizeMap.get(curnodeAndQueryAsString);
 		if(queryResultSize>=sizethreshold){
 			return false;
 		}else{
-      structures.sizeMap.get(curnodeAndQueryAsString).push(structures.sizeMap.get(stringNodeSubquery));
+      structures.sizeMap.set(curnodeAndQueryAsString, queryResultSize + structures.sizeMap.get(stringNodeSubquery));
       return x;
 		}
     });
@@ -366,24 +367,6 @@ function calculateInlineFragment(structures, curnodeAndQueryAsString, u, query, 
 
 function extendPath(prev, key) {
   return { prev: prev, key: key };
-}
-
-/**
- * arrSum - summarize values of a nested array
- *
- * @param  {array} arr
- * @return {number}
- * @private
- */
-function arrSum(arr) {
-  return arr.reduce(function fn(a, b) {
-    if (Array.isArray(b)) {
-      return b.reduce(fn, a);
-    } else if (b === Math.round(b)) {
-      return a + b;
-    }
-    return a;
-  }, 0);
 }
 
 /** Produces the result from the resultsMap structure into a string.
