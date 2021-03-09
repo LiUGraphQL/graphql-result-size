@@ -235,15 +235,8 @@ function updateDataStructuresForScalarField(structures, curnodeAndQueryAsString,
 }
 
 /**
- * Builds the resolver info and args, then executes the corresponding resolver function.
- */ 
-function resolveField(subquery, fieldDef, calculationContext, path){
-  let resolveFn = fieldDef.resolve || calculationContext.exeContext.fieldResolver;
-  let info = _execution.buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, calculationContext.queryType, path);
-  let args = (0, _execution.getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
-  return Promise.resolve(resolveFn(calculationContext.source, args, calculationContext.exeContext.contextValue, info));
-}
-
+ * Used by updateDataStructuresForScalarField.
+ */
 function updateDataStructuresForScalarFieldValue(structures, curnodeAndQueryAsString, result, fieldName){
   let value;
   let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString);
@@ -304,6 +297,9 @@ function updateDataStructuresForObjectField(structures, curnodeAndQueryAsString,
   });
 }
 
+/**
+ * Used by updateDataStructuresForObjectField.
+ */
 function updateDataStructuresForObjectFieldResult(result, structures, curnodeAndQueryAsString, subquery, fieldDef, calculationContext, path, sizethreshold){
   // update queryType of the calculationContext for the following recursion
   if (fieldDef.astNode.type.kind === 'ListType') {
@@ -343,6 +339,9 @@ function updateDataStructuresForObjectFieldResult(result, structures, curnodeAnd
   }
 }
 
+/**
+ * Used by updateDataStructuresForObjectFieldResult.
+ */
 function updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold){
   let relatedNode = createNode(calculationContext.source, fieldDef);
   let stringRelatedNodeSubquery = JSON.stringify([relatedNode, subquery.selectionSet.selections]);
@@ -400,6 +399,16 @@ function updateDataStructuresForInlineFragment(structures, curnodeAndQueryAsStri
 
 function extendPath(prev, key) {
   return { prev: prev, key: key };
+}
+
+/**
+ * Builds the resolver info and args, then executes the corresponding resolver function.
+ */
+function resolveField(subquery, fieldDef, calculationContext, path){
+  let resolveFn = fieldDef.resolve || calculationContext.exeContext.fieldResolver;
+  let info = _execution.buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, calculationContext.queryType, path);
+  let args = (0, _execution.getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
+  return Promise.resolve(resolveFn(calculationContext.source, args, calculationContext.exeContext.contextValue, info));
 }
 
 /** Produces the result from the resultsMap structure into a string.
