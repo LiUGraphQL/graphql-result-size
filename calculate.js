@@ -71,7 +71,8 @@ function queryCalculator(db, threshold, validationContext, options) {
     let structures = {
       labels : new Map(),
       sizeMap : new Map(),
-      resultsMap : new Map()
+      resultsMap : new Map(),
+      hits : 0
     };
 
     /* Parse query to remove location properties */
@@ -82,7 +83,7 @@ function queryCalculator(db, threshold, validationContext, options) {
       .then(() => {
         let stringNodeQuery = JSON.stringify([rootNode, query]);
         const querySize = structures.sizeMap.get(stringNodeQuery);
-        console.log('Size of result: ' + querySize);
+        console.log('Size of result: ' + querySize + ' \t Number of hits: ' + structures.hits);
         if (querySize > threshold) {
           validationContext.reportError(
             new GraphQLError(
@@ -180,6 +181,7 @@ function populateDataStructures(structures, u, query, calculationContext, path, 
     }
   } else {
     /* The query already exists in labels for this node */
+	 structures.hits += 1;
     return Promise.resolve();
   }
 }
