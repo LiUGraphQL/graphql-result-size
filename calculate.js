@@ -81,8 +81,8 @@ function queryCalculator(db, threshold, validationContext, options) {
 
     return populateDataStructures(structures, rootNode, query, calculationContext, undefined ,threshold)
       .then(() => {
-        let stringNodeQuery = JSON.stringify([rootNode, query]);
-        const querySize = structures.sizeMap.get(stringNodeQuery);
+        let curKey = getSizeMapKey(rootNode, query);
+        const querySize = structures.sizeMap.get(curKey);
         console.log('Size of result: ' + querySize + ' \t Number of hits: ' + structures.hits);
         if (querySize > threshold) {
           validationContext.reportError(
@@ -93,7 +93,7 @@ function queryCalculator(db, threshold, validationContext, options) {
         let data = {
           results : structures.resultsMap,
           validationContext : validationContext,
-          index : stringNodeQuery
+          index : curKey
         };
         return data;
       });
@@ -103,6 +103,14 @@ function queryCalculator(db, threshold, validationContext, options) {
       throw err;
     }
   }
+}
+
+/**
+ * Creates a key for the given pair of data node and (sub)query to be used for
+ * look ups in the sizeMap and in the resultsMap.
+ */
+function getSizeMapKey( u, query ) {
+  return JSON.stringify([u, query]);
 }
 
 /**
@@ -127,7 +135,7 @@ function queryCalculator(db, threshold, validationContext, options) {
 function populateDataStructures(structures, u, query, calculationContext, path, sizethreshold) {
   // The following three strings are used as keys in the data structures
   // that are populated by the algorithm (labels, sizeMap, and resultsMap)
-  let curnodeAndQueryAsString = JSON.stringify([u, query]);
+  let sizeMapKey = getSizeMapKey(u,query);
   let subqueryAsString = JSON.stringify(query);
   let curnodeAsString = JSON.stringify(u);
   // Check whether the given (sub)query has already been considered for the
@@ -139,27 +147,27 @@ function populateDataStructures(structures, u, query, calculationContext, path, 
     markQueryAsConsideredForNode(structures.labels, curnodeAsString, subqueryAsString);
     // ...and initialize the other two data structures
     // (this is not explicitly captured in the pseudo code)
-    initializeDataStructures(structures.sizeMap, structures.resultsMap, curnodeAndQueryAsString);
+    initializeDataStructures(structures.sizeMap, structures.resultsMap, sizeMapKey);
     // Now continue depending on the form of the given (sub)query.
     if (query.length > 1) {
       // The (sub)query is a concatenation of multiple (sub)queries
       // (this corresponds to line 46 in the pseudo code of the algorithm)
-      return updateDataStructuresForAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold);
+      return updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, calculationContext, path, sizethreshold);
     }
     else if (!(query[0].selectionSet)) {
       // The (sub)query requests a single, scalar-typed field
       // (this corresponds to line 3 in the pseudo code of the algorithm)
-      return updateDataStructuresForScalarField(structures, curnodeAndQueryAsString, query[0], calculationContext, path);
+      return updateDataStructuresForScalarField(structures, sizeMapKey, query[0], calculationContext, path);
     }
     else if (query[0].kind === 'Field') {
       // The (sub)query requests a single field with a subselection
       // (this corresponds to line 10 in the pseudo code of the algorithm)
-      return updateDataStructuresForObjectField(structures, curnodeAndQueryAsString, query[0], calculationContext, path, sizethreshold);
+      return updateDataStructuresForObjectField(structures, sizeMapKey, query[0], calculationContext, path, sizethreshold);
     }
     else if (query[0].kind === 'InlineFragment') {
       // The (sub)query is an inline fragment
       // (this corresponds to line 40 in the pseudo code of the algorithm)
-      return updateDataStructuresForInlineFragment(structures, curnodeAndQueryAsString, u, query[0], calculationContext, path, sizethreshold);
+      return updateDataStructuresForInlineFragment(structures, sizeMapKey, u, query[0], calculationContext, path, sizethreshold);
     }
   } else {
     /* The query already exists in labels for this node */
@@ -183,13 +191,13 @@ function markQueryAsConsideredForNode(labels, curnodeAsString, subqueryAsString)
 }
 
 /* Initializes the data structures sizeMap and resultsMap if they have not been initialized before */
-function initializeDataStructures(sizeMap, resultsMap, curnodeAndQueryAsString){
-  if (!sizeMap.has(curnodeAndQueryAsString)) {
-    sizeMap.set(curnodeAndQueryAsString, 0);
+function initializeDataStructures(sizeMap, resultsMap, sizeMapKey){
+  if (!sizeMap.has(sizeMapKey)) {
+    sizeMap.set(sizeMapKey, 0);
   }
   
-  if (!resultsMap.has(curnodeAndQueryAsString)) {
-    resultsMap.set(curnodeAndQueryAsString, []);
+  if (!resultsMap.has(sizeMapKey)) {
+    resultsMap.set(sizeMapKey, []);
   }
 }
 
@@ -197,19 +205,19 @@ function initializeDataStructures(sizeMap, resultsMap, curnodeAndQueryAsString){
  * Updates the given data structures for all subqueries of the given (sub)query.
  * This corresponds to lines 47-55 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForAllSubqueries(structures, query, curnodeAndQueryAsString, u, calculationContext, path, sizethreshold){
+function updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, calculationContext, path, sizethreshold){
   return Promise.all(query.map(function(subquery, index) {
     if (index !== 0) {
-      structures.sizeMap.set(curnodeAndQueryAsString, structures.sizeMap.get(curnodeAndQueryAsString)+1);
-      structures.resultsMap.get(curnodeAndQueryAsString).push(",");
+      structures.sizeMap.set(sizeMapKey, structures.sizeMap.get(sizeMapKey)+1);
+      structures.resultsMap.get(sizeMapKey).push(",");
     }
-    let curnodeAndSubqueryAsString = JSON.stringify([u, [subquery]]);
-    structures.resultsMap.get(curnodeAndQueryAsString).push([curnodeAndSubqueryAsString]);
+    let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
+    structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
 	 // get into the recursion for each subquery
     return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold)
     .then(x => {
-      let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString) + structures.sizeMap.get(curnodeAndSubqueryAsString);
-		structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
+      let increasedSize = structures.sizeMap.get(sizeMapKey) + structures.sizeMap.get(sizeMapKeyForSubquery);
+		structures.sizeMap.set(sizeMapKey, increasedSize);
       if (increasedSize >= sizethreshold) {
         return false;
       } else {
@@ -223,13 +231,13 @@ function updateDataStructuresForAllSubqueries(structures, query, curnodeAndQuery
  * Updates the given data structures for a scalar-typed field.
  * This corresponds to lines 3-9 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForScalarField(structures, curnodeAndQueryAsString, subquery, calculationContext, path){
+function updateDataStructuresForScalarField(structures, sizeMapKey, subquery, calculationContext, path){
   let fieldName = subquery.name.value;
   let fieldDef = calculationContext.queryType.getFields()[fieldName];
   path = extendPath(path, fieldName);
   return resolveField(subquery, fieldDef, calculationContext, path)
   .then(result => {
-    updateDataStructuresForScalarFieldValue(structures, curnodeAndQueryAsString, result, fieldName);
+    updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result, fieldName);
     return Promise.resolve();
   });
 }
@@ -237,9 +245,9 @@ function updateDataStructuresForScalarField(structures, curnodeAndQueryAsString,
 /**
  * Used by updateDataStructuresForScalarField.
  */
-function updateDataStructuresForScalarFieldValue(structures, curnodeAndQueryAsString, result, fieldName){
+function updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result, fieldName){
   let value;
-  let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString);
+  let increasedSize = structures.sizeMap.get(sizeMapKey);
   if (Array.isArray(result)) {
     increasedSize += 2 + result.length;
     if (result.length <= 1) {
@@ -272,9 +280,9 @@ function updateDataStructuresForScalarFieldValue(structures, curnodeAndQueryAsSt
   if (typeof value === "string"){
     value = "\"" + value + "\"";
   }
-  structures.resultsMap.get(curnodeAndQueryAsString).push("\"" + fieldName + "\"" + ":");
-  structures.resultsMap.get(curnodeAndQueryAsString).push(value);
-  structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
+  structures.resultsMap.get(sizeMapKey).push("\"" + fieldName + "\"" + ":");
+  structures.resultsMap.get(sizeMapKey).push(value);
+  structures.sizeMap.set(sizeMapKey, increasedSize);
   return increasedSize;
 }
 
@@ -282,25 +290,25 @@ function updateDataStructuresForScalarFieldValue(structures, curnodeAndQueryAsSt
  * Updates the given data structures for a object-typed fields (i.e., fields that have a selection set).
  * This corresponds to lines 11-39 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForObjectField(structures, curnodeAndQueryAsString, subquery, calculationContext, path, sizethreshold){
+function updateDataStructuresForObjectField(structures, sizeMapKey, subquery, calculationContext, path, sizethreshold){
   let fieldName = subquery.name.value;
   let fieldDef = calculationContext.queryType.getFields()[fieldName];
   path = extendPath(path, fieldName);
   return resolveField(subquery, fieldDef, calculationContext, path)
   .then(result => {
     // extend data structures to capture field name and colon
-    let curSize = structures.sizeMap.get(curnodeAndQueryAsString);
-    structures.sizeMap.set(curnodeAndQueryAsString, curSize + 2);
-    structures.resultsMap.get(curnodeAndQueryAsString).push("\"" + fieldName + "\"" + ":");
+    let curSize = structures.sizeMap.get(sizeMapKey);
+    structures.sizeMap.set(sizeMapKey, curSize + 2);
+    structures.resultsMap.get(sizeMapKey).push("\"" + fieldName + "\"" + ":");
     // extend data structures to capture the given result fetched for the object field
-    return updateDataStructuresForObjectFieldResult(result, structures, curnodeAndQueryAsString, subquery, fieldDef, calculationContext, path, sizethreshold);
+    return updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path, sizethreshold);
   });
 }
 
 /**
  * Used by updateDataStructuresForObjectField.
  */
-function updateDataStructuresForObjectFieldResult(result, structures, curnodeAndQueryAsString, subquery, fieldDef, calculationContext, path, sizethreshold){
+function updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path, sizethreshold){
   // update queryType of the calculationContext for the following recursion
   if (fieldDef.astNode.type.kind === 'ListType') {
     calculationContext.queryType = fieldDef.type.ofType;
@@ -309,59 +317,59 @@ function updateDataStructuresForObjectFieldResult(result, structures, curnodeAnd
   }
   // proceed depending on the given result fetched for the object field
   if (result == null) { // empty/no sub-result
-    let curSize = structures.sizeMap.get(curnodeAndQueryAsString);
-    structures.sizeMap.set(curnodeAndQueryAsString, curSize + 1); // for 'null'
-    structures.resultsMap.get(curnodeAndQueryAsString).push("null");
+    let curSize = structures.sizeMap.get(sizeMapKey);
+    structures.sizeMap.set(sizeMapKey, curSize + 1); // for 'null'
+    structures.resultsMap.get(sizeMapKey).push("null");
     return Promise.resolve();
   }
   else if (Array.isArray(result)) {
-    let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString);
+    let increasedSize = structures.sizeMap.get(sizeMapKey);
     increasedSize += 2;                 // for '[' and ']'
     increasedSize += result.length - 1; // for the commas
-    structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
-    structures.resultsMap.get(curnodeAndQueryAsString).push("[");
+    structures.sizeMap.set(sizeMapKey, increasedSize);
+    structures.resultsMap.get(sizeMapKey).push("[");
     // get into the recursion for each element of the result
     return Promise.all(result.map(function(resultItem, index) {
       if (index !== 0) {
-        structures.resultsMap.get(curnodeAndQueryAsString).push(",");
+        structures.resultsMap.get(sizeMapKey).push(",");
       }
       calculationContext.source = resultItem;
-      return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold);
+      return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold);
     }))
     .then(x => {
-      structures.resultsMap.get(curnodeAndQueryAsString).push("]");
+      structures.resultsMap.get(sizeMapKey).push("]");
       return x;
     });
   }
   else { // sub-result is a single object
     calculationContext.source = result;
-    return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold);
+    return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold);
   }
 }
 
 /**
  * Used by updateDataStructuresForObjectFieldResult.
  */
-function updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold){
+function updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold){
   let relatedNode = createNode(calculationContext.source, fieldDef);
-  let stringRelatedNodeSubquery = JSON.stringify([relatedNode, subquery.selectionSet.selections]);
+  let sizeMapKeyForRelatedNode = getSizeMapKey(relatedNode, subquery.selectionSet.selections);
   // The following block should better be inside the 'then' block below, but it doesn't work correctly with the referencing in resultsMap.
       // extend the corresponding resultsMap entry
-      structures.resultsMap.get(curnodeAndQueryAsString).push("{");
-      structures.resultsMap.get(curnodeAndQueryAsString).push([stringRelatedNodeSubquery]);
-      structures.resultsMap.get(curnodeAndQueryAsString).push("}");
+      structures.resultsMap.get(sizeMapKey).push("{");
+      structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForRelatedNode]);
+      structures.resultsMap.get(sizeMapKey).push("}");
   // get into the recursion for the given result item
   return populateDataStructures(structures, relatedNode, subquery.selectionSet.selections, calculationContext, path, sizethreshold)
   .then(x => {
 //     // extend the corresponding resultsMap entry
-//     structures.resultsMap.get(curnodeAndQueryAsString).push("{");
-//     structures.resultsMap.get(curnodeAndQueryAsString).push([stringRelatedNodeSubquery]);
-//     structures.resultsMap.get(curnodeAndQueryAsString).push("}");
+//     structures.resultsMap.get(sizeMapKey).push("{");
+//     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForRelatedNode]);
+//     structures.resultsMap.get(sizeMapKey).push("}");
     // ...and increase the corresponding sizeMap entry accordingly
-    let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString);
+    let increasedSize = structures.sizeMap.get(sizeMapKey);
 	 increasedSize += 2; // for '{' and '}'
-	 increasedSize += structures.sizeMap.get(stringRelatedNodeSubquery);
-    structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
+	 increasedSize += structures.sizeMap.get(sizeMapKeyForRelatedNode);
+    structures.sizeMap.set(sizeMapKey, increasedSize);
     // check whether the algorithm can be terminated
     if (increasedSize >= sizethreshold) {
       return false; // terminate
@@ -375,17 +383,17 @@ function updateDataStructuresForObjectFieldResultItem(structures, subquery, fiel
  * Updates the given data structures for inline fragments.
  * This corresponds to lines 41-45 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForInlineFragment(structures, curnodeAndQueryAsString, u, query, calculationContext, path, sizethreshold){
+function updateDataStructuresForInlineFragment(structures, sizeMapKey, u, query, calculationContext, path, sizethreshold){
   let onType = query.typeCondition.name.value;
   if (nodeType(u) === onType) {
     let subquery = query.selectionSet.selections;
-    let curnodeAndSubqueryAsString = JSON.stringify([u, subquery]);
-    structures.resultsMap.get(curnodeAndQueryAsString).push([curnodeAndSubqueryAsString]);
+    let sizeMapKeyForSubquery = getSizeMapKey(u, subquery);
+    structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
     calculationContext.queryType = fieldInfo.exeContext.schema.getType(onType);
     return populateDataStructures(structures, u, subquery, calculationContext, path, sizethreshold)
     .then (x => {
-      let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString) + structures.sizeMap.get(curnodeAndSubqueryAsString);
-      structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
+      let increasedSize = structures.sizeMap.get(sizeMapKey) + structures.sizeMap.get(sizeMapKeyForSubquery);
+      structures.sizeMap.set(sizeMapKey, increasedSize);
       if (increasedSize >= sizethreshold) {
         return false;
       } else {
