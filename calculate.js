@@ -20,7 +20,8 @@ module.exports = {queryCalculator, produceResult};
 const _ = require('lodash');
 const deleteKey = require('key-del');
 const {
-  GraphQLError
+  GraphQLError,
+  print
 } = require('graphql');
 const {
   createNode,
@@ -110,7 +111,8 @@ function queryCalculator(db, threshold, validationContext, options) {
  * look ups in the sizeMap and in the resultsMap.
  */
 function getSizeMapKey( u, query ) {
-  return JSON.stringify([u, query]);
+  //return JSON.stringify([u, query]);
+  return JSON.stringify([u, print(query)]);
 }
 
 /**
