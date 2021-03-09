@@ -330,7 +330,7 @@ function updateDataStructuresForObjectFieldResult(result, structures, curnodeAnd
         structures.resultsMap.get(curnodeAndQueryAsString).push(",");
       }
       calculationContext.source = resultItem;
-      return calculateSingleNode(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold);
+      return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold);
     }))
     .then(x => {
       structures.resultsMap.get(curnodeAndQueryAsString).push("]");
@@ -339,26 +339,36 @@ function updateDataStructuresForObjectFieldResult(result, structures, curnodeAnd
   }
   else { // sub-result is a single object
     calculationContext.source = result;
-    return calculateSingleNode(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold);
+    return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold);
   }
 }
 
-function calculateSingleNode(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold){
-  structures.sizeMap.set(curnodeAndQueryAsString, structures.sizeMap.get(curnodeAndQueryAsString)+2);
+function updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, curnodeAndQueryAsString, calculationContext, path, sizethreshold){
   let relatedNode = createNode(calculationContext.source, fieldDef);
   let stringRelatedNodeSubquery = JSON.stringify([relatedNode, subquery.selectionSet.selections]);
-  structures.resultsMap.get(curnodeAndQueryAsString).push("{");
-  structures.resultsMap.get(curnodeAndQueryAsString).push([stringRelatedNodeSubquery]);
-  structures.resultsMap.get(curnodeAndQueryAsString).push("}");
+  // The following block should better be inside the 'then' block below, but it doesn't work correctly with the referencing in resultsMap.
+      // extend the corresponding resultsMap entry
+      structures.resultsMap.get(curnodeAndQueryAsString).push("{");
+      structures.resultsMap.get(curnodeAndQueryAsString).push([stringRelatedNodeSubquery]);
+      structures.resultsMap.get(curnodeAndQueryAsString).push("}");
+  // get into the recursion for the given result item
   return populateDataStructures(structures, relatedNode, subquery.selectionSet.selections, calculationContext, path, sizethreshold)
   .then(x => {
-	let queryResultSize=structures.sizeMap.get(curnodeAndQueryAsString);
-    if(queryResultSize>=sizethreshold){
-        return false;
-    }else{
-    structures.sizeMap.set(curnodeAndQueryAsString, queryResultSize + structures.sizeMap.get(stringRelatedNodeSubquery));
-    return x;  
-	}	
+//     // extend the corresponding resultsMap entry
+//     structures.resultsMap.get(curnodeAndQueryAsString).push("{");
+//     structures.resultsMap.get(curnodeAndQueryAsString).push([stringRelatedNodeSubquery]);
+//     structures.resultsMap.get(curnodeAndQueryAsString).push("}");
+    // ...and increase the corresponding sizeMap entry accordingly
+    let increasedSize = structures.sizeMap.get(curnodeAndQueryAsString);
+	 increasedSize += 2; // for '{' and '}'
+	 increasedSize += structures.sizeMap.get(stringRelatedNodeSubquery);
+    structures.sizeMap.set(curnodeAndQueryAsString, increasedSize);
+    // check whether the algorithm can be terminated
+    if (increasedSize >= sizethreshold) {
+      return false; // terminate
+    } else {
+      return x;
+    }
   });
 }
 
