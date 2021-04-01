@@ -81,14 +81,13 @@ function queryCalculator(db, threshold, validationContext, options) {
     const rootNode = getRootNode(db, calculationContext.queryType);
 
     return populateDataStructures(structures, rootNode, query, calculationContext, undefined ,threshold)
-      .then(() => {
+      .then(resultSize => {
         let curKey = getSizeMapKey(rootNode, query);
-        const querySize = structures.sizeMap.get(curKey);
-        console.log('Size of result: ' + querySize + ' \t Number of hits: ' + structures.hits);
-        if (querySize > threshold) {
+        console.log('Size of result: ' + resultSize + ' \t Number of hits: ' + structures.hits);
+        if (resultSize > threshold) {
           validationContext.reportError(
             new GraphQLError(
-              `Calculation: Size of query result is ${querySize}, which exceeds maximum size of ${threshold}`)
+              `Calculation: Size of query result is ${resultSize}, which exceeds maximum size of ${threshold}`)
           );
         }
         let data = {
@@ -147,34 +146,38 @@ function populateDataStructures(structures, u, query, calculationContext, path, 
     // Record that the given (sub)query has been considered for the given data node
     // (this corresponds to line 2 in the pseudo code of the algorithm)
     markQueryAsConsideredForNode(structures.labels, curnodeAsString, subqueryAsString);
-    // ...and initialize the other two data structures
+    // ...and initialize the resultsMap data structure
     // (this is not explicitly captured in the pseudo code)
-    initializeDataStructures(structures.sizeMap, structures.resultsMap, sizeMapKey);
+    initializeDataStructures(structures.resultsMap, sizeMapKey);
     // Now continue depending on the form of the given (sub)query.
+	 let sizePromise = null;
     if (query.length > 1) {
       // The (sub)query is a concatenation of multiple (sub)queries
       // (this corresponds to line 46 in the pseudo code of the algorithm)
-      return updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, calculationContext, path, sizethreshold);
+      sizePromise = updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, calculationContext, path, sizethreshold);
     }
     else if (!(query[0].selectionSet)) {
       // The (sub)query requests a single, scalar-typed field
       // (this corresponds to line 3 in the pseudo code of the algorithm)
-      return updateDataStructuresForScalarField(structures, sizeMapKey, query[0], calculationContext, path);
+      sizePromise = updateDataStructuresForScalarField(structures, sizeMapKey, query[0], calculationContext, path);
     }
     else if (query[0].kind === 'Field') {
       // The (sub)query requests a single field with a subselection
       // (this corresponds to line 10 in the pseudo code of the algorithm)
-      return updateDataStructuresForObjectField(structures, sizeMapKey, query[0], calculationContext, path, sizethreshold);
+      sizePromise = updateDataStructuresForObjectField(structures, sizeMapKey, query[0], calculationContext, path, sizethreshold);
     }
     else if (query[0].kind === 'InlineFragment') {
       // The (sub)query is an inline fragment
       // (this corresponds to line 40 in the pseudo code of the algorithm)
-      return updateDataStructuresForInlineFragment(structures, sizeMapKey, u, query[0], calculationContext, path, sizethreshold);
+      sizePromise = updateDataStructuresForInlineFragment(structures, sizeMapKey, u, query[0], calculationContext, path, sizethreshold);
     }
-  } else {
+    structures.sizeMap.set(sizeMapKey, sizePromise);
+    return sizePromise;
+  }
+  else {
     /* The query already exists in labels for this node */
 	 structures.hits += 1;
-    return Promise.resolve();
+	 return structures.sizeMap.get(sizeMapKey);
   }
 }
 
@@ -192,12 +195,8 @@ function markQueryAsConsideredForNode(labels, curnodeAsString, subqueryAsString)
   }
 }
 
-/* Initializes the data structures sizeMap and resultsMap if they have not been initialized before */
-function initializeDataStructures(sizeMap, resultsMap, sizeMapKey){
-  if (!sizeMap.has(sizeMapKey)) {
-    sizeMap.set(sizeMapKey, 0);
-  }
-  
+/* Initializes the resultsMap data structure if it has not been initialized before */
+function initializeDataStructures(resultsMap, sizeMapKey){
   if (!resultsMap.has(sizeMapKey)) {
     resultsMap.set(sizeMapKey, []);
   }
@@ -210,23 +209,18 @@ function initializeDataStructures(sizeMap, resultsMap, sizeMapKey){
 function updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, calculationContext, path, sizethreshold){
   return Promise.all(query.map(function(subquery, index) {
     if (index !== 0) {
-      structures.sizeMap.set(sizeMapKey, structures.sizeMap.get(sizeMapKey)+1);
       structures.resultsMap.get(sizeMapKey).push(",");
     }
     let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
 	 // get into the recursion for each subquery
-    return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold)
-    .then(x => {
-      let increasedSize = structures.sizeMap.get(sizeMapKey) + structures.sizeMap.get(sizeMapKeyForSubquery);
-		structures.sizeMap.set(sizeMapKey, increasedSize);
-      if (increasedSize >= sizethreshold) {
-        return false;
-      } else {
-        return x;
-	   }
-    });
-  }));
+    return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold);
+  }))
+  .then(subquerySizes => {
+	  let size = subquerySizes.length -1; // for the commas
+	  subquerySizes.forEach( subquerySize => size += subquerySize );
+	  return Promise.resolve(size);
+  });
 }
 
 /*
@@ -239,8 +233,7 @@ function updateDataStructuresForScalarField(structures, sizeMapKey, subquery, ca
   path = extendPath(path, fieldName);
   return resolveField(subquery, fieldDef, calculationContext, path)
   .then(result => {
-    updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result, fieldName);
-    return Promise.resolve();
+    return updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result, fieldName);
   });
 }
 
@@ -249,9 +242,9 @@ function updateDataStructuresForScalarField(structures, sizeMapKey, subquery, ca
  */
 function updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result, fieldName){
   let value;
-  let increasedSize = structures.sizeMap.get(sizeMapKey);
+  let size = 0;
   if (Array.isArray(result)) {
-    increasedSize += 2 + result.length;
+    size += 2 + result.length;
     if (result.length <= 1) {
       result = result[0];
     } else {
@@ -262,8 +255,9 @@ function updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result,
       });
     }
   } else {
-    increasedSize += 3;
+    size += 3;
   }
+  const sizePromise = Promise.resolve(size);
   if (typeof result === "object" && result !== null && !Array.isArray(result)){
     value = result[fieldName];
   } else if (Array.isArray(result)) {
@@ -284,8 +278,7 @@ function updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result,
   }
   structures.resultsMap.get(sizeMapKey).push("\"" + fieldName + "\"" + ":");
   structures.resultsMap.get(sizeMapKey).push(value);
-  structures.sizeMap.set(sizeMapKey, increasedSize);
-  return increasedSize;
+  return sizePromise;
 }
 
 /*
@@ -299,11 +292,10 @@ function updateDataStructuresForObjectField(structures, sizeMapKey, subquery, ca
   return resolveField(subquery, fieldDef, calculationContext, path)
   .then(result => {
     // extend data structures to capture field name and colon
-    let curSize = structures.sizeMap.get(sizeMapKey);
-    structures.sizeMap.set(sizeMapKey, curSize + 2);
     structures.resultsMap.get(sizeMapKey).push("\"" + fieldName + "\"" + ":");
     // extend data structures to capture the given result fetched for the object field
-    return updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path, sizethreshold);
+	 return updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path, sizethreshold)
+	 .then( subquerySize => Promise.resolve(subquerySize+2) ); // +2 for field name and colon
   });
 }
 
@@ -319,16 +311,10 @@ function updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey
   }
   // proceed depending on the given result fetched for the object field
   if (result == null) { // empty/no sub-result
-    let curSize = structures.sizeMap.get(sizeMapKey);
-    structures.sizeMap.set(sizeMapKey, curSize + 1); // for 'null'
     structures.resultsMap.get(sizeMapKey).push("null");
-    return Promise.resolve();
+    return Promise.resolve(1); // for 'null'
   }
   else if (Array.isArray(result)) {
-    let increasedSize = structures.sizeMap.get(sizeMapKey);
-    increasedSize += 2;                 // for '[' and ']'
-    increasedSize += result.length - 1; // for the commas
-    structures.sizeMap.set(sizeMapKey, increasedSize);
     structures.resultsMap.get(sizeMapKey).push("[");
     // get into the recursion for each element of the result
     return Promise.all(result.map(function(resultItem, index) {
@@ -338,9 +324,12 @@ function updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey
       calculationContext.source = resultItem;
       return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold);
     }))
-    .then(x => {
+    .then(resultItemSizes => {
       structures.resultsMap.get(sizeMapKey).push("]");
-      return x;
+		let size = 2;                        // for '[' and ']'
+		size += resultItemSizes.length - 1;  // for the commas
+		resultItemSizes.forEach( resultItemSize => size += resultItemSize );
+      return Promise.resolve(size);
     });
   }
   else { // sub-result is a single object
@@ -362,22 +351,13 @@ function updateDataStructuresForObjectFieldResultItem(structures, subquery, fiel
       structures.resultsMap.get(sizeMapKey).push("}");
   // get into the recursion for the given result item
   return populateDataStructures(structures, relatedNode, subquery.selectionSet.selections, calculationContext, path, sizethreshold)
-  .then(x => {
+  .then(subquerySize => {
 //     // extend the corresponding resultsMap entry
 //     structures.resultsMap.get(sizeMapKey).push("{");
 //     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForRelatedNode]);
 //     structures.resultsMap.get(sizeMapKey).push("}");
-    // ...and increase the corresponding sizeMap entry accordingly
-    let increasedSize = structures.sizeMap.get(sizeMapKey);
-	 increasedSize += 2; // for '{' and '}'
-	 increasedSize += structures.sizeMap.get(sizeMapKeyForRelatedNode);
-    structures.sizeMap.set(sizeMapKey, increasedSize);
-    // check whether the algorithm can be terminated
-    if (increasedSize >= sizethreshold) {
-      return false; // terminate
-    } else {
-      return x;
-    }
+    // ...and return an increased result size promise
+	 return Promise.resolve(subquerySize+2); // +2 for '{' and '}'
   });
 }
 
@@ -392,18 +372,9 @@ function updateDataStructuresForInlineFragment(structures, sizeMapKey, u, query,
     let sizeMapKeyForSubquery = getSizeMapKey(u, subquery);
     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
     calculationContext.queryType = fieldInfo.exeContext.schema.getType(onType);
-    return populateDataStructures(structures, u, subquery, calculationContext, path, sizethreshold)
-    .then (x => {
-      let increasedSize = structures.sizeMap.get(sizeMapKey) + structures.sizeMap.get(sizeMapKeyForSubquery);
-      structures.sizeMap.set(sizeMapKey, increasedSize);
-      if (increasedSize >= sizethreshold) {
-        return false;
-      } else {
-        return x;
-      }
-    });
+    return populateDataStructures(structures, u, subquery, calculationContext, path, sizethreshold);
   } else {
-    return Promise.resolve();
+    return Promise.resolve(0); // the sub-result will be the empty string
   }
 }
 
