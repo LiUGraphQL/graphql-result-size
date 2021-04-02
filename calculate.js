@@ -64,9 +64,9 @@ function queryCalculator(db, threshold, validationContext, options) {
     let calculationContext = {
       exeContext : exeContext,
       fieldNodes : fieldNodes,
-      queryType : validationContext.getSchema().getQueryType(),
       source : options.rootValue,
-      path : null
+      path : null,
+		sizethreshold : threshold
     };
 
     let structures = {
@@ -78,9 +78,10 @@ function queryCalculator(db, threshold, validationContext, options) {
 
     /* Parse query to remove location properties */
     const query = deleteKey(documentAST.definitions[0].selectionSet.selections, 'loc');
-    const rootNode = getRootNode(db, calculationContext.queryType);
+    const rootNodeType = validationContext.getSchema().getQueryType();
+    const rootNode = getRootNode(db, rootNodeType);
 
-    return populateDataStructures(structures, rootNode, query, calculationContext, undefined ,threshold)
+    return populateDataStructures(structures, rootNode, rootNodeType, query, calculationContext, undefined)
       .then(resultSize => {
         let curKey = getSizeMapKey(rootNode, query);
         console.log('Size of result: ' + resultSize + ' \t Number of hits: ' + structures.hits);
@@ -126,14 +127,14 @@ function getSizeMapKey( u, query ) {
  *
  * @param  {object} structures          contains three map structures: labels, sizeMap and resultsMap
  * @param  {object} u                   node
+ * @param  {object} uType               a GraphQL object representing the type of the given node
  * @param  {object} query               (sub)query to be calculated
  * @param  {object} calculationContext  contains additional information needed for the calculation
  * @param  {object} path                contains the path from the root node to the current node
- * @param  {number} sizethreshold       threshold for the result size; the recursive process gets terminated if the threshold is exceeded
  * @return {promise}
  * @private
  */
-function populateDataStructures(structures, u, query, calculationContext, path, sizethreshold) {
+async function populateDataStructures(structures, u, uType, query, calculationContext, path) {
   // The following three strings are used as keys in the data structures
   // that are populated by the algorithm (labels, sizeMap, and resultsMap)
   let sizeMapKey = getSizeMapKey(u,query);
@@ -154,22 +155,22 @@ function populateDataStructures(structures, u, query, calculationContext, path, 
     if (query.length > 1) {
       // The (sub)query is a concatenation of multiple (sub)queries
       // (this corresponds to line 46 in the pseudo code of the algorithm)
-      sizePromise = updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, calculationContext, path, sizethreshold);
+      sizePromise = updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, uType, calculationContext, path);
     }
     else if (!(query[0].selectionSet)) {
       // The (sub)query requests a single, scalar-typed field
       // (this corresponds to line 3 in the pseudo code of the algorithm)
-      sizePromise = updateDataStructuresForScalarField(structures, sizeMapKey, query[0], calculationContext, path);
+      sizePromise = updateDataStructuresForScalarField(structures, sizeMapKey, uType, query[0], calculationContext, path);
     }
     else if (query[0].kind === 'Field') {
       // The (sub)query requests a single field with a subselection
       // (this corresponds to line 10 in the pseudo code of the algorithm)
-      sizePromise = updateDataStructuresForObjectField(structures, sizeMapKey, query[0], calculationContext, path, sizethreshold);
+      sizePromise = updateDataStructuresForObjectField(structures, sizeMapKey, uType, query[0], calculationContext, path);
     }
     else if (query[0].kind === 'InlineFragment') {
       // The (sub)query is an inline fragment
       // (this corresponds to line 40 in the pseudo code of the algorithm)
-      sizePromise = updateDataStructuresForInlineFragment(structures, sizeMapKey, u, query[0], calculationContext, path, sizethreshold);
+      sizePromise = updateDataStructuresForInlineFragment(structures, sizeMapKey, u, uType, query[0], calculationContext, path);
     }
     structures.sizeMap.set(sizeMapKey, sizePromise);
     return sizePromise;
@@ -206,32 +207,55 @@ function initializeDataStructures(resultsMap, sizeMapKey){
  * Updates the given data structures for all subqueries of the given (sub)query.
  * This corresponds to lines 47-55 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, calculationContext, path, sizethreshold){
-  return Promise.all(query.map(function(subquery, index) {
-    if (index !== 0) {
+async function updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, uType, calculationContext, path){
+//------- new end
+  let size = 0;
+  let isFirstSubquery = true;
+  for (const subquery of query) {
+    if ( isFirstSubquery ) {
+      isFirstSubquery = false;
+    } else {
       structures.resultsMap.get(sizeMapKey).push(",");
+      size += 1; // for the comma
     }
     let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
-	 // get into the recursion for each subquery
-    return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold);
-  }))
-  .then(subquerySizes => {
-	  let size = subquerySizes.length -1; // for the commas
-	  subquerySizes.forEach( subquerySize => size += subquerySize );
-	  return Promise.resolve(size);
-  });
+    const subquerySize = await populateDataStructures(structures, u, uType, [subquery], calculationContext, path);
+    size += subquerySize;
+    if (size > calculationContext.sizethreshold) {
+      break; // terminate and ignore the rest of the subqueries
+    }
+  }
+  return Promise.resolve(size);
+//------- new end
+
+//------- original begin
+//   return Promise.all(query.map(function(subquery, index) {
+//     if (index !== 0) {
+//       structures.resultsMap.get(sizeMapKey).push(",");
+//     }
+//     let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
+//     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
+// 	 // get into the recursion for each subquery
+//     return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold);
+//   }))
+//   .then(subquerySizes => {
+// 	  let size = subquerySizes.length -1; // for the commas
+// 	  subquerySizes.forEach( subquerySize => size += subquerySize );
+// 	  return Promise.resolve(size);
+//   });
+//------- original end
 }
 
 /*
  * Updates the given data structures for a scalar-typed field.
  * This corresponds to lines 3-9 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForScalarField(structures, sizeMapKey, subquery, calculationContext, path){
+function updateDataStructuresForScalarField(structures, sizeMapKey, uType, subquery, calculationContext, path){
   let fieldName = subquery.name.value;
-  let fieldDef = calculationContext.queryType.getFields()[fieldName];
+  let fieldDef = uType.getFields()[fieldName];
   path = extendPath(path, fieldName);
-  return resolveField(subquery, fieldDef, calculationContext, path)
+  return resolveField(subquery, uType, fieldDef, calculationContext, path)
   .then(result => {
     return updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result, fieldName);
   });
@@ -285,16 +309,16 @@ function updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result,
  * Updates the given data structures for a object-typed fields (i.e., fields that have a selection set).
  * This corresponds to lines 11-39 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForObjectField(structures, sizeMapKey, subquery, calculationContext, path, sizethreshold){
+function updateDataStructuresForObjectField(structures, sizeMapKey, uType, subquery, calculationContext, path){
   let fieldName = subquery.name.value;
-  let fieldDef = calculationContext.queryType.getFields()[fieldName];
+  let fieldDef = uType.getFields()[fieldName];
   path = extendPath(path, fieldName);
-  return resolveField(subquery, fieldDef, calculationContext, path)
+  return resolveField(subquery, uType, fieldDef, calculationContext, path)
   .then(result => {
     // extend data structures to capture field name and colon
     structures.resultsMap.get(sizeMapKey).push("\"" + fieldName + "\"" + ":");
     // extend data structures to capture the given result fetched for the object field
-	 return updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path, sizethreshold)
+	 return updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path)
 	 .then( subquerySize => Promise.resolve(subquerySize+2) ); // +2 for field name and colon
   });
 }
@@ -302,46 +326,72 @@ function updateDataStructuresForObjectField(structures, sizeMapKey, subquery, ca
 /**
  * Used by updateDataStructuresForObjectField.
  */
-function updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path, sizethreshold){
-  // update queryType of the calculationContext for the following recursion
-  if (fieldDef.astNode.type.kind === 'ListType') {
-    calculationContext.queryType = fieldDef.type.ofType;
-  } else {
-    calculationContext.queryType = fieldDef.type;
-  }
+async function updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path){
+  // update uType for the following recursion
+  const relatedNodeType = (fieldDef.astNode.type.kind === 'ListType') ?
+    fieldDef.type.ofType :
+    fieldDef.type;
   // proceed depending on the given result fetched for the object field
+  let resultPromise;
   if (result == null) { // empty/no sub-result
     structures.resultsMap.get(sizeMapKey).push("null");
-    return Promise.resolve(1); // for 'null'
+    resultPromise = Promise.resolve(1); // for 'null'
   }
   else if (Array.isArray(result)) {
+// ----- new begin
     structures.resultsMap.get(sizeMapKey).push("[");
-    // get into the recursion for each element of the result
-    return Promise.all(result.map(function(resultItem, index) {
-      if (index !== 0) {
+    let size = 1; // for '['
+    let isFirstSubquery = true;
+    // iterate over the elements of the result
+    for (const resultItem of result) {
+      if ( isFirstSubquery ) {
+        isFirstSubquery = false;
+      } else {
         structures.resultsMap.get(sizeMapKey).push(",");
+        size += 1; // for the comma
       }
       calculationContext.source = resultItem;
-      return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold);
-    }))
-    .then(resultItemSizes => {
-      structures.resultsMap.get(sizeMapKey).push("]");
-		let size = 2;                        // for '[' and ']'
-		size += resultItemSizes.length - 1;  // for the commas
-		resultItemSizes.forEach( resultItemSize => size += resultItemSize );
-      return Promise.resolve(size);
-    });
+      // get into the recursion for each element of the result
+      const resultItemSize = await updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, calculationContext, path);
+      size += resultItemSize;
+      if (size > calculationContext.sizethreshold) {
+        break; // terminate and ignore the rest of the elements in the result
+      }
+    }
+    structures.resultsMap.get(sizeMapKey).push("]");
+    size += 1;  // for ']'
+    resultPromise = Promise.resolve(size);
+// ----- new end
+
+// ---- original begin
+//     structures.resultsMap.get(sizeMapKey).push("[");
+//     return Promise.all(result.map(function(resultItem, index) {
+//       if (index !== 0) {
+//         structures.resultsMap.get(sizeMapKey).push(",");
+//       }
+//       calculationContext.source = resultItem;
+//       return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold);
+//     }))
+//     .then(resultItemSizes => {
+//       structures.resultsMap.get(sizeMapKey).push("]");
+// 		let size = 2;                        // for '[' and ']'
+// 		size += resultItemSizes.length - 1;  // for the commas
+// 		resultItemSizes.forEach( resultItemSize => size += resultItemSize );
+//       return Promise.resolve(size);
+//     });
+// ---- original end
   }
   else { // sub-result is a single object
     calculationContext.source = result;
-    return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold);
+    resultPromise = updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, calculationContext, path);
   }
+  return resultPromise;
 }
 
 /**
  * Used by updateDataStructuresForObjectFieldResult.
  */
-function updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold){
+function updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, calculationContext, path){
   let relatedNode = createNode(calculationContext.source, fieldDef);
   let sizeMapKeyForRelatedNode = getSizeMapKey(relatedNode, subquery.selectionSet.selections);
   // The following block should better be inside the 'then' block below, but it doesn't work correctly with the referencing in resultsMap.
@@ -350,7 +400,7 @@ function updateDataStructuresForObjectFieldResultItem(structures, subquery, fiel
       structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForRelatedNode]);
       structures.resultsMap.get(sizeMapKey).push("}");
   // get into the recursion for the given result item
-  return populateDataStructures(structures, relatedNode, subquery.selectionSet.selections, calculationContext, path, sizethreshold)
+  return populateDataStructures(structures, relatedNode, relatedNodeType, subquery.selectionSet.selections, calculationContext, path)
   .then(subquerySize => {
 //     // extend the corresponding resultsMap entry
 //     structures.resultsMap.get(sizeMapKey).push("{");
@@ -365,14 +415,14 @@ function updateDataStructuresForObjectFieldResultItem(structures, subquery, fiel
  * Updates the given data structures for inline fragments.
  * This corresponds to lines 41-45 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForInlineFragment(structures, sizeMapKey, u, query, calculationContext, path, sizethreshold){
+function updateDataStructuresForInlineFragment(structures, sizeMapKey, u, uType, query, calculationContext, path){
   let onType = query.typeCondition.name.value;
   if (nodeType(u) === onType) {
     let subquery = query.selectionSet.selections;
     let sizeMapKeyForSubquery = getSizeMapKey(u, subquery);
     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
-    calculationContext.queryType = fieldInfo.exeContext.schema.getType(onType);
-    return populateDataStructures(structures, u, subquery, calculationContext, path, sizethreshold);
+    const uTypeNew = fieldInfo.exeContext.schema.getType(onType);
+    return populateDataStructures(structures, u, uTypeNew, subquery, calculationContext, path);
   } else {
     return Promise.resolve(0); // the sub-result will be the empty string
   }
@@ -385,9 +435,9 @@ function extendPath(prev, key) {
 /**
  * Builds the resolver info and args, then executes the corresponding resolver function.
  */
-function resolveField(subquery, fieldDef, calculationContext, path){
+function resolveField(subquery, nodeType, fieldDef, calculationContext, path){
   let resolveFn = fieldDef.resolve || calculationContext.exeContext.fieldResolver;
-  let info = _execution.buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, calculationContext.queryType, path);
+  let info = _execution.buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, nodeType, path);
   let args = (0, _execution.getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
   return Promise.resolve(resolveFn(calculationContext.source, args, calculationContext.exeContext.contextValue, info));
 }
