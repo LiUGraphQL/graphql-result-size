@@ -64,7 +64,8 @@ function queryCalculator(db, threshold, validationContext, options) {
     let calculationContext = {
       exeContext : exeContext,
       fieldNodes : fieldNodes,
-		sizethreshold : threshold
+      sizethreshold : threshold,
+      terminateEarly : false
     };
 
     let structures = {
@@ -208,43 +209,42 @@ function initializeDataStructures(resultsMap, sizeMapKey){
  * This corresponds to lines 47-55 in the pseudo code of the algorithm.
  */
 async function updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, uType, parentForResolvers, calculationContext, path){
-//------- new end
-  let size = 0;
-  let isFirstSubquery = true;
-  for (const subquery of query) {
-    if ( isFirstSubquery ) {
-      isFirstSubquery = false;
-    } else {
-      structures.resultsMap.get(sizeMapKey).push(",");
-      size += 1; // for the comma
+  if (calculationContext.terminateEarly) {
+    let size = 0;
+    let isFirstSubquery = true;
+    for (const subquery of query) {
+      if ( isFirstSubquery ) {
+        isFirstSubquery = false;
+      } else {
+        structures.resultsMap.get(sizeMapKey).push(",");
+        size += 1; // for the comma
+      }
+      let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
+      structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
+      const subquerySize = await populateDataStructures(structures, u, uType, [subquery], parentForResolvers, calculationContext, path);
+      size += subquerySize;
+      if (size > calculationContext.sizethreshold) {
+        break; // terminate and ignore the rest of the subqueries
+      }
     }
-    let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
-    structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
-    const subquerySize = await populateDataStructures(structures, u, uType, [subquery], parentForResolvers, calculationContext, path);
-    size += subquerySize;
-    if (size > calculationContext.sizethreshold) {
-      break; // terminate and ignore the rest of the subqueries
-    }
+    return Promise.resolve(size);
   }
-  return Promise.resolve(size);
-//------- new end
-
-//------- original begin
-//   return Promise.all(query.map(function(subquery, index) {
-//     if (index !== 0) {
-//       structures.resultsMap.get(sizeMapKey).push(",");
-//     }
-//     let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
-//     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
-// 	 // get into the recursion for each subquery
-//     return populateDataStructures(structures, u, uType, [subquery], parentForResolvers, calculationContext, path);
-//   }))
-//   .then(subquerySizes => {
-// 	  let size = subquerySizes.length -1; // for the commas
-// 	  subquerySizes.forEach( subquerySize => size += subquerySize );
-// 	  return Promise.resolve(size);
-//   });
-//------- original end
+  else {
+    return Promise.all(query.map(function(subquery, index) {
+      if (index !== 0) {
+        structures.resultsMap.get(sizeMapKey).push(",");
+      }
+      let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
+      structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
+      // get into the recursion for each subquery
+      return populateDataStructures(structures, u, uType, [subquery], parentForResolvers, calculationContext, path);
+    }))
+    .then(subquerySizes => {
+      let size = subquerySizes.length -1; // for the commas
+      subquerySizes.forEach( subquerySize => size += subquerySize );
+      return Promise.resolve(size);
+    });
+  }
 }
 
 /*
@@ -337,8 +337,7 @@ async function updateDataStructuresForObjectFieldResult(result, structures, size
     structures.resultsMap.get(sizeMapKey).push("null");
     resultPromise = Promise.resolve(1); // for 'null'
   }
-  else if (Array.isArray(result)) {
-// ----- new begin
+  else if (Array.isArray(result) && calculationContext.terminateEarly) {
     structures.resultsMap.get(sizeMapKey).push("[");
     let size = 1; // for '['
     let isFirstSubquery = true;
@@ -361,25 +360,23 @@ async function updateDataStructuresForObjectFieldResult(result, structures, size
     structures.resultsMap.get(sizeMapKey).push("]");
     size += 1;  // for ']'
     resultPromise = Promise.resolve(size);
-// ----- new end
-
-// ---- original begin
-//     structures.resultsMap.get(sizeMapKey).push("[");
-//     return Promise.all(result.map(function(resultItem, index) {
-//       if (index !== 0) {
-//         structures.resultsMap.get(sizeMapKey).push(",");
-//       }
-//       const newParentForResolvers = resultItem;
-//       return updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, newParentForResolvers, calculationContext, path);
-//     }))
-//     .then(resultItemSizes => {
-//       structures.resultsMap.get(sizeMapKey).push("]");
-// 		let size = 2;                        // for '[' and ']'
-// 		size += resultItemSizes.length - 1;  // for the commas
-// 		resultItemSizes.forEach( resultItemSize => size += resultItemSize );
-//       return Promise.resolve(size);
-//     });
-// ---- original end
+  }
+  else if (Array.isArray(result)) {
+    structures.resultsMap.get(sizeMapKey).push("[");
+    return Promise.all(result.map(function(resultItem, index) {
+      if (index !== 0) {
+        structures.resultsMap.get(sizeMapKey).push(",");
+      }
+      const newParentForResolvers = resultItem;
+      return updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, newParentForResolvers, calculationContext, path);
+    }))
+    .then(resultItemSizes => {
+      structures.resultsMap.get(sizeMapKey).push("]");
+      let size = 2;                        // for '[' and ']'
+      size += resultItemSizes.length - 1;  // for the commas
+      resultItemSizes.forEach( resultItemSize => size += resultItemSize );
+      return Promise.resolve(size);
+    });
   }
   else { // sub-result is a single object
     const newParentForResolvers = result;
