@@ -64,8 +64,6 @@ function queryCalculator(db, threshold, validationContext, options) {
     let calculationContext = {
       exeContext : exeContext,
       fieldNodes : fieldNodes,
-      source : options.rootValue,
-      path : null,
 		sizethreshold : threshold
     };
 
@@ -80,8 +78,9 @@ function queryCalculator(db, threshold, validationContext, options) {
     const query = deleteKey(documentAST.definitions[0].selectionSet.selections, 'loc');
     const rootNodeType = validationContext.getSchema().getQueryType();
     const rootNode = getRootNode(db, rootNodeType);
+    const parentForResolvers = options.rootValue;
 
-    return populateDataStructures(structures, rootNode, rootNodeType, query, calculationContext, undefined)
+    return populateDataStructures(structures, rootNode, rootNodeType, query, parentForResolvers, calculationContext, undefined)
       .then(resultSize => {
         let curKey = getSizeMapKey(rootNode, query);
         console.log('Size of result: ' + resultSize + ' \t Number of hits: ' + structures.hits);
@@ -129,12 +128,13 @@ function getSizeMapKey( u, query ) {
  * @param  {object} u                   node
  * @param  {object} uType               a GraphQL object representing the type of the given node
  * @param  {object} query               (sub)query to be calculated
+ * @param  {object} parentForResolvers  current parent object to be passed to the resolver functions
  * @param  {object} calculationContext  contains additional information needed for the calculation
  * @param  {object} path                contains the path from the root node to the current node
  * @return {promise}
  * @private
  */
-async function populateDataStructures(structures, u, uType, query, calculationContext, path) {
+async function populateDataStructures(structures, u, uType, query, parentForResolvers, calculationContext, path) {
   // The following three strings are used as keys in the data structures
   // that are populated by the algorithm (labels, sizeMap, and resultsMap)
   let sizeMapKey = getSizeMapKey(u,query);
@@ -155,22 +155,22 @@ async function populateDataStructures(structures, u, uType, query, calculationCo
     if (query.length > 1) {
       // The (sub)query is a concatenation of multiple (sub)queries
       // (this corresponds to line 46 in the pseudo code of the algorithm)
-      sizePromise = updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, uType, calculationContext, path);
+      sizePromise = updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, uType, parentForResolvers, calculationContext, path);
     }
     else if (!(query[0].selectionSet)) {
       // The (sub)query requests a single, scalar-typed field
       // (this corresponds to line 3 in the pseudo code of the algorithm)
-      sizePromise = updateDataStructuresForScalarField(structures, sizeMapKey, uType, query[0], calculationContext, path);
+      sizePromise = updateDataStructuresForScalarField(structures, sizeMapKey, uType, query[0], parentForResolvers, calculationContext, path);
     }
     else if (query[0].kind === 'Field') {
       // The (sub)query requests a single field with a subselection
       // (this corresponds to line 10 in the pseudo code of the algorithm)
-      sizePromise = updateDataStructuresForObjectField(structures, sizeMapKey, uType, query[0], calculationContext, path);
+      sizePromise = updateDataStructuresForObjectField(structures, sizeMapKey, uType, query[0], parentForResolvers, calculationContext, path);
     }
     else if (query[0].kind === 'InlineFragment') {
       // The (sub)query is an inline fragment
       // (this corresponds to line 40 in the pseudo code of the algorithm)
-      sizePromise = updateDataStructuresForInlineFragment(structures, sizeMapKey, u, uType, query[0], calculationContext, path);
+      sizePromise = updateDataStructuresForInlineFragment(structures, sizeMapKey, u, uType, query[0], parentForResolvers, calculationContext, path);
     }
     structures.sizeMap.set(sizeMapKey, sizePromise);
     return sizePromise;
@@ -207,7 +207,7 @@ function initializeDataStructures(resultsMap, sizeMapKey){
  * Updates the given data structures for all subqueries of the given (sub)query.
  * This corresponds to lines 47-55 in the pseudo code of the algorithm.
  */
-async function updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, uType, calculationContext, path){
+async function updateDataStructuresForAllSubqueries(structures, query, sizeMapKey, u, uType, parentForResolvers, calculationContext, path){
 //------- new end
   let size = 0;
   let isFirstSubquery = true;
@@ -220,7 +220,7 @@ async function updateDataStructuresForAllSubqueries(structures, query, sizeMapKe
     }
     let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
-    const subquerySize = await populateDataStructures(structures, u, uType, [subquery], calculationContext, path);
+    const subquerySize = await populateDataStructures(structures, u, uType, [subquery], parentForResolvers, calculationContext, path);
     size += subquerySize;
     if (size > calculationContext.sizethreshold) {
       break; // terminate and ignore the rest of the subqueries
@@ -237,7 +237,7 @@ async function updateDataStructuresForAllSubqueries(structures, query, sizeMapKe
 //     let sizeMapKeyForSubquery = getSizeMapKey(u, [subquery]);
 //     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
 // 	 // get into the recursion for each subquery
-//     return populateDataStructures(structures, u, [subquery], calculationContext, path, sizethreshold);
+//     return populateDataStructures(structures, u, uType, [subquery], parentForResolvers, calculationContext, path);
 //   }))
 //   .then(subquerySizes => {
 // 	  let size = subquerySizes.length -1; // for the commas
@@ -251,11 +251,11 @@ async function updateDataStructuresForAllSubqueries(structures, query, sizeMapKe
  * Updates the given data structures for a scalar-typed field.
  * This corresponds to lines 3-9 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForScalarField(structures, sizeMapKey, uType, subquery, calculationContext, path){
+function updateDataStructuresForScalarField(structures, sizeMapKey, uType, subquery, parentForResolvers, calculationContext, path){
   let fieldName = subquery.name.value;
   let fieldDef = uType.getFields()[fieldName];
   path = extendPath(path, fieldName);
-  return resolveField(subquery, uType, fieldDef, calculationContext, path)
+  return resolveField(subquery, uType, fieldDef, parentForResolvers, calculationContext, path)
   .then(result => {
     return updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result, fieldName);
   });
@@ -309,16 +309,16 @@ function updateDataStructuresForScalarFieldValue(structures, sizeMapKey, result,
  * Updates the given data structures for a object-typed fields (i.e., fields that have a selection set).
  * This corresponds to lines 11-39 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForObjectField(structures, sizeMapKey, uType, subquery, calculationContext, path){
+function updateDataStructuresForObjectField(structures, sizeMapKey, uType, subquery, parentForResolvers, calculationContext, path){
   let fieldName = subquery.name.value;
   let fieldDef = uType.getFields()[fieldName];
   path = extendPath(path, fieldName);
-  return resolveField(subquery, uType, fieldDef, calculationContext, path)
+  return resolveField(subquery, uType, fieldDef, parentForResolvers, calculationContext, path)
   .then(result => {
     // extend data structures to capture field name and colon
     structures.resultsMap.get(sizeMapKey).push("\"" + fieldName + "\"" + ":");
     // extend data structures to capture the given result fetched for the object field
-	 return updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path)
+	 return updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, parentForResolvers, calculationContext, path)
 	 .then( subquerySize => Promise.resolve(subquerySize+2) ); // +2 for field name and colon
   });
 }
@@ -326,7 +326,7 @@ function updateDataStructuresForObjectField(structures, sizeMapKey, uType, subqu
 /**
  * Used by updateDataStructuresForObjectField.
  */
-async function updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, calculationContext, path){
+async function updateDataStructuresForObjectFieldResult(result, structures, sizeMapKey, subquery, fieldDef, parentForResolvers, calculationContext, path){
   // update uType for the following recursion
   const relatedNodeType = (fieldDef.astNode.type.kind === 'ListType') ?
     fieldDef.type.ofType :
@@ -350,9 +350,9 @@ async function updateDataStructuresForObjectFieldResult(result, structures, size
         structures.resultsMap.get(sizeMapKey).push(",");
         size += 1; // for the comma
       }
-      calculationContext.source = resultItem;
+      const newParentForResolvers = resultItem;
       // get into the recursion for each element of the result
-      const resultItemSize = await updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, calculationContext, path);
+      const resultItemSize = await updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, newParentForResolvers, calculationContext, path);
       size += resultItemSize;
       if (size > calculationContext.sizethreshold) {
         break; // terminate and ignore the rest of the elements in the result
@@ -369,8 +369,8 @@ async function updateDataStructuresForObjectFieldResult(result, structures, size
 //       if (index !== 0) {
 //         structures.resultsMap.get(sizeMapKey).push(",");
 //       }
-//       calculationContext.source = resultItem;
-//       return updateDataStructuresForObjectFieldResultItem(structures, subquery, fieldDef, sizeMapKey, calculationContext, path, sizethreshold);
+//       const newParentForResolvers = resultItem;
+//       return updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, newParentForResolvers, calculationContext, path);
 //     }))
 //     .then(resultItemSizes => {
 //       structures.resultsMap.get(sizeMapKey).push("]");
@@ -382,8 +382,8 @@ async function updateDataStructuresForObjectFieldResult(result, structures, size
 // ---- original end
   }
   else { // sub-result is a single object
-    calculationContext.source = result;
-    resultPromise = updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, calculationContext, path);
+    const newParentForResolvers = result;
+    resultPromise = updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, newParentForResolvers, calculationContext, path);
   }
   return resultPromise;
 }
@@ -391,8 +391,8 @@ async function updateDataStructuresForObjectFieldResult(result, structures, size
 /**
  * Used by updateDataStructuresForObjectFieldResult.
  */
-function updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, calculationContext, path){
-  let relatedNode = createNode(calculationContext.source, fieldDef);
+function updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, sizeMapKey, parentForResolvers, calculationContext, path){
+  let relatedNode = createNode(parentForResolvers, fieldDef);
   let sizeMapKeyForRelatedNode = getSizeMapKey(relatedNode, subquery.selectionSet.selections);
   // The following block should better be inside the 'then' block below, but it doesn't work correctly with the referencing in resultsMap.
       // extend the corresponding resultsMap entry
@@ -400,7 +400,7 @@ function updateDataStructuresForObjectFieldResultItem(structures, subquery, rela
       structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForRelatedNode]);
       structures.resultsMap.get(sizeMapKey).push("}");
   // get into the recursion for the given result item
-  return populateDataStructures(structures, relatedNode, relatedNodeType, subquery.selectionSet.selections, calculationContext, path)
+  return populateDataStructures(structures, relatedNode, relatedNodeType, subquery.selectionSet.selections, parentForResolvers, calculationContext, path)
   .then(subquerySize => {
 //     // extend the corresponding resultsMap entry
 //     structures.resultsMap.get(sizeMapKey).push("{");
@@ -415,14 +415,14 @@ function updateDataStructuresForObjectFieldResultItem(structures, subquery, rela
  * Updates the given data structures for inline fragments.
  * This corresponds to lines 41-45 in the pseudo code of the algorithm.
  */
-function updateDataStructuresForInlineFragment(structures, sizeMapKey, u, uType, query, calculationContext, path){
+function updateDataStructuresForInlineFragment(structures, sizeMapKey, u, uType, query, parentForResolvers, calculationContext, path){
   let onType = query.typeCondition.name.value;
   if (nodeType(u) === onType) {
     let subquery = query.selectionSet.selections;
     let sizeMapKeyForSubquery = getSizeMapKey(u, subquery);
     structures.resultsMap.get(sizeMapKey).push([sizeMapKeyForSubquery]);
     const uTypeNew = fieldInfo.exeContext.schema.getType(onType);
-    return populateDataStructures(structures, u, uTypeNew, subquery, calculationContext, path);
+    return populateDataStructures(structures, u, uTypeNew, subquery, parentForResolvers, calculationContext, path);
   } else {
     return Promise.resolve(0); // the sub-result will be the empty string
   }
@@ -435,11 +435,12 @@ function extendPath(prev, key) {
 /**
  * Builds the resolver info and args, then executes the corresponding resolver function.
  */
-function resolveField(subquery, nodeType, fieldDef, calculationContext, path){
-  let resolveFn = fieldDef.resolve || calculationContext.exeContext.fieldResolver;
+function resolveField(subquery, nodeType, fieldDef, parentForResolvers, calculationContext, path){
+  //let resolveFn = fieldDef.resolve || calculationContext.exeContext.fieldResolver;
+  let resolveFn = fieldDef.resolve;
   let info = _execution.buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, nodeType, path);
   let args = (0, _execution.getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
-  return Promise.resolve(resolveFn(calculationContext.source, args, calculationContext.exeContext.contextValue, info));
+  return Promise.resolve(resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info));
 }
 
 /** Produces the result from the resultsMap structure into a string.
