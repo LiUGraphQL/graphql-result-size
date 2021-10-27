@@ -1,4 +1,4 @@
-# GraphQL Result Size Calculator
+# GraphQL Result Size Calculator (AndreasLundquist branch)
 *Note: The code in the master branch of this repo is currently under development, and the following description will have to be updated. If you are here to find the implementation that Tim Andersson has used for his Bachelor thesis ([Result size calculation for Facebook's GraphQL query language](http://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-150026)), switch to the [TimAndersson branch](https://github.com/LiUGraphQL/graphql-result-size/tree/TimAndersson).*
 
 This is a [Node.js](https://nodejs.org/en/) module that provides a prototypical implementation of an algorithm that calculates the *exact* size of GraphQL response objects. Hence, this module can be used to check whether the size of the response to a GraphQL query exceeds a given threshold. In this sense, the module should be used as a dependency in GraphQL server frameworks that execute the server-side runtime process of GraphQL.
