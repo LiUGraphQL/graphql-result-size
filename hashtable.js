@@ -26,4 +26,4 @@ HashTableArrays.prototype = {
 
 };
 
-module.exports = HashTableArrays;
+export { HashTableArrays };

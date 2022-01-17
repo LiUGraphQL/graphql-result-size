@@ -1,4 +1,4 @@
-const _ = require('lodash');
+import _ from 'lodash';
 
 //Representation of a node, unique to the back-end
 function Node(x, y) {
@@ -7,24 +7,24 @@ function Node(x, y) {
 }
 
 //Function for determining equality between nodes
-Node.prototype.equals = function(obj) {
+Node.prototype.equals = (obj) => {
   return (obj instanceof Node) &&
     (obj.id === this.id) &&
     (obj.table === this.table);
 };
 
 //Return a new instance of a Node object, unique representation of the root node
-var getRootNode = (db, queryType) => {
+const getRootNode = (queryType) => {
   return new Node(0, queryType.name);
 };
 
 //Return the type of the given node, output should be a GraphQLType object
-var nodeType = (node) => {
+const nodeType = (node) => {
   return node.table;
 };
 
 // Create a new node
-var createNode = (item, fieldDef) => {
+const createNode = (item, fieldDef) => {
   let id = item;
   let fieldTypes = fieldDef.astNode.type.kind === 'ListType' ? fieldDef.type.ofType._fields : fieldDef.type._fields;
   _.forOwn(fieldTypes, type => {
@@ -36,7 +36,7 @@ var createNode = (item, fieldDef) => {
   return new Node(id, type);
 };
 
-module.exports = {
+export {
   Node,
   createNode,
   getRootNode,
