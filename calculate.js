@@ -40,8 +40,6 @@ function queryCalculator(requestContext) {
     const rootValue = contextValue.rootValue;
     const fieldResolver = contextValue.fieldResolver;
     const typeResolver = contextValue.undeftypeResolver;
-    let o = {schema, document, rootValue, contextValue, variableValues, operationName, fieldResolver, typeResolver}
-    //console.log(JSON.stringify(o, null, 2))
     const exeContext = buildExecutionContext(schema, document, rootValue, contextValue, variableValues, operationName, fieldResolver, typeResolver);
     const fieldNodes = document.definitions[0].selectionSet.selections;
 
@@ -92,8 +90,7 @@ function queryCalculator(requestContext) {
                 calculationTime: performance.now() - startTime,
                 timeout: contextValue.timeout,
                 threshold: calculationContext.threshold,
-                terminateEarly: calculationContext.terminateEarly,
-                promises: 0
+                terminateEarly: calculationContext.terminateEarly
             }
             
             if(calculationContext.errorCode){
@@ -116,8 +113,8 @@ function queryCalculator(requestContext) {
             let data = `{ ${ produceResult(structures.resultMap, curKey)} }`;
             response.resultTime = performance.now() - startTime;
             let result = {
-                data, //JSON.parse(`{ ${produceResult(structures.resultMap, curKey)} }`),
-                extensions: { response }
+                data: JSON.parse(`{ ${produceResult(structures.resultMap, curKey)} }`),
+                extensions: { calculate: response }
             };
             return result;
         })
@@ -199,17 +196,15 @@ async function populateDataStructures(structures, u, uType, query, parentForReso
         /* The query already exists in labels for this node */
         structures.hits += 1;
         let prelSize = structures.prelSizeMap.get(mapKey);
-        structures.globalSize += prelSize;
+        //structures.globalSize += prelSize;
         structures.sizeMap.get(mapKey)
-            .then(size => structures.globalSize += size - prelSize);
+            .then(size => structures.globalSize += size) // - prelSize);
         return structures.sizeMap.get(mapKey);
     }
 }
 
 function queryAlreadyConsideredForNode(labelMap, curnodeAsString, subqueryAsString) {
-    return (_.some(labelMap.get(curnodeAsString), function (o) {
-        return o === subqueryAsString;
-    }));
+    return (_.some(labelMap.get(curnodeAsString), (o) => o === subqueryAsString));
 }
 
 function markQueryAsConsideredForNode(labelMap, curnodeAsString, subqueryAsString) {
@@ -280,9 +275,8 @@ function updateDataStructuresForScalarField(structures, mapKey, uType, subquery,
     }
     return resolveField(subquery, uType, fieldDef, parentForResolvers, calculationContext, path, structures)
         .then(result => {
-            calculationContext.resolveCounter -= 1;
-            console.log("Pending rosolvers:", calculationContext.resolveCounter)
-
+            //calculationContext.resolveCounter -= 1;
+            //console.log("Pending resolvers:", calculationContext.resolveCounter);
             return updateDataStructuresForScalarFieldValue(structures, mapKey, result, fieldName, calculationContext);
         });
 }
