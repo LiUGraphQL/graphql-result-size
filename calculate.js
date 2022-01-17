@@ -92,8 +92,7 @@ function queryCalculator(requestContext) {
                 calculationTime: performance.now() - startTime,
                 timeout: contextValue.timeout,
                 threshold: calculationContext.threshold,
-                terminateEarly: calculationContext.terminateEarly,
-                promises: 0
+                terminateEarly: calculationContext.terminateEarly
             }
             
             if(calculationContext.errorCode){
@@ -117,7 +116,7 @@ function queryCalculator(requestContext) {
             response.resultTime = performance.now() - startTime;
             let result = {
                 data, //JSON.parse(`{ ${produceResult(structures.resultMap, curKey)} }`),
-                extensions: { response }
+                extensions: { calculate: response }
             };
             return result;
         })
@@ -199,17 +198,15 @@ async function populateDataStructures(structures, u, uType, query, parentForReso
         /* The query already exists in labels for this node */
         structures.hits += 1;
         let prelSize = structures.prelSizeMap.get(mapKey);
-        structures.globalSize += prelSize;
+        //structures.globalSize += prelSize;
         structures.sizeMap.get(mapKey)
-            .then(size => structures.globalSize += size - prelSize);
+            .then(size => structures.globalSize += size) // - prelSize);
         return structures.sizeMap.get(mapKey);
     }
 }
 
 function queryAlreadyConsideredForNode(labelMap, curnodeAsString, subqueryAsString) {
-    return (_.some(labelMap.get(curnodeAsString), function (o) {
-        return o === subqueryAsString;
-    }));
+    return (_.some(labelMap.get(curnodeAsString), (o) => o === subqueryAsString));
 }
 
 function markQueryAsConsideredForNode(labelMap, curnodeAsString, subqueryAsString) {
