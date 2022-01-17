@@ -1,27 +1,36 @@
 {
   "name": "graphql-result-size",
-  "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "",
   "main": "calculate.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/LiUGraphQL/graphql-result-size.git"
-  },
-  "author": "Tim Andersson",
+  "contributors": [
+    {
+      "name": "Robin Keskisärkkä",
+      "email": "robin.keskisarkka@liu.se",
+      "url": ""
+    },
+    {
+      "name": "Tim Andersson",
+      "email": "",
+      "url": ""
+    },
+    {
+      "name": "Olaf Hartig",
+      "email": "olaf.hartig@liu.se",
+      "url": ""
+    }
+  ],
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/LiUGraphQL/graphql-result-size/issues"
-  },
-  "homepage": "https://github.com/LiUGraphQL/graphql-result-size#readme",
   "dependencies": {
-    "lodash": "^4.17.4",
-    "key-del": "^1.3.0"
+    "key-del": "^1.3.0",
+    "lodash": "^4.17.21",
+    "p-limit": "^4.0.0"
   },
   "peerDependencies": {
-    "graphql": "^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0"
+    "graphql": "^15.3.0"
   }
 }
