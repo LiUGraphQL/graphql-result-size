@@ -14,9 +14,9 @@ import {
     getFieldDef
 } from 'graphql/execution/execute.js';
 import { getArgumentValues } from 'graphql/execution/values.js';
-import { GraphQLError } from 'graphql'; // Replace with graphql error!
+import { ApolloError } from 'apollo-server-errors';
 
-const promiseThrottle = pLimit(20);
+const limit = pLimit(20);
 
 /**
  * Initializes the label, size, and result maps, and runs the calculate function
@@ -50,8 +50,7 @@ function queryCalculator(requestContext) {
         threshold: contextValue.threshold,
         errorCode: null,
         terminateEarly: contextValue.terminateEarly,
-        earlyTerminationTimestamp: null,
-        resolveCounter: 0
+        earlyTerminationTimestamp: null
     };
 
     const structures = {
@@ -104,17 +103,17 @@ function queryCalculator(requestContext) {
                 if(calculationContext.earlyTerminationTimestamp){
                     response.waitingOnPromises = performance.now() - calculationContext.earlyTerminationTimestamp;
                 }
-                throw new GraphQLError(response.errorCode, response);
+                throw new ApolloError(response.errorCode, response);
             }
 
             response.errorCode = 'OK';
             // Create result
             let curKey = getMapKey(rootNode, query);
-            let data = `{ ${ produceResult(structures.resultMap, curKey)} }`;
+            let data = JSON.parse(`{ ${ produceResult(structures.resultMap, curKey)} }`);
             response.resultTime = performance.now() - startTime;
             let result = {
-                data: JSON.parse(`{ ${produceResult(structures.resultMap, curKey)} }`),
-                extensions: { calculate: response }
+                data,
+                extensions: { response }
             };
             return result;
         })
@@ -275,8 +274,6 @@ function updateDataStructuresForScalarField(structures, mapKey, uType, subquery,
     }
     return resolveField(subquery, uType, fieldDef, parentForResolvers, calculationContext, path, structures)
         .then(result => {
-            //calculationContext.resolveCounter -= 1;
-            //console.log("Pending resolvers:", calculationContext.resolveCounter);
             return updateDataStructuresForScalarFieldValue(structures, mapKey, result, fieldName, calculationContext);
         });
 }
@@ -351,9 +348,6 @@ function updateDataStructuresForObjectField(structures, mapKey, uType, subquery,
     }
     return resolveField(subquery, uType, fieldDef, parentForResolvers, calculationContext, path, structures)
         .then(result => {
-            calculationContext.resolveCounter -= 1;
-            console.log("Pending rosolvers:", calculationContext.resolveCounter)
-
             // extend data structures to capture field name and colon
             structures.resultMap.get(mapKey).push("\"" + fieldName + "\"" + ":");
 
@@ -463,7 +457,6 @@ function extendPath(prev, key) {
 function checkTermination(structures, calculationContext){
     // check for results size exception
     if(calculationContext.errorCode){
-        //console.log("Found termination spot at",  structures.globalSize)
         return true;
     } else if(calculationContext.terminateEarly
               && structures.globalSize > calculationContext.threshold) {
@@ -481,25 +474,13 @@ function resolveField(subquery, nodeType, fieldDef, parentForResolvers, calculat
     let resolveFn = fieldDef.resolve;
     let info = buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, nodeType, path);
     let args = (0, getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
-    return Promise.resolve(resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info));
-    //calculationContext.resolveCounter += 1;
-    //console.log("Pending resolvers:", calculationContext.resolveCounter)
     
-    //return promiseThrottle.limit(resolveFn, parentForResolvers, args, calculationContext.exeContext.contextValue, info);
-    
-    /**
-    if(calculationContext.resolveCounter > 20){
-        const delay = t => new Promise(resolve => setTimeout(resolve, t));
-        return delay(20).then(() => {
-            if(checkTermination(structures, calculationContext)){
-                return Promise.resolve(0);
-            }
-            return resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info);
-        });
-    } else {
-        return Promise.resolve(resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info));
-    }
-    **/
+    return limit(() => {
+        if(checkTermination(structures, calculationContext)){
+            return Promise.resolve(null);
+        }
+        return resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info);
+    });
 }
 
 /** Produces the result from the results structure into a string.
@@ -515,7 +496,7 @@ function produceResult(resultMap, index) {
     let response = "";
     resultMap.get(index).forEach(element => {
         if (Array.isArray(element) && element.length > 1) {
-            _.forEach(element, function (subElement) {
+            _.forEach(element, (subElement) => {
                 response += subElement;
             });
         } else if (typeof element === "object" && element !== null) {
