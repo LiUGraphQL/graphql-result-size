@@ -56,7 +56,6 @@ function queryCalculator(requestContext) {
     const structures = {
         labelMap: new Map(),
         sizeMap: new Map(),
-        prelSizeMap: new Map(),
         resultMap: new Map(),
         hits: 0,
         globalSize: 0
@@ -166,9 +165,6 @@ async function populateDataStructures(structures, u, uType, query, parentForReso
 
         // Continue depending on the form of the given (sub)query
         let sizePromise = null;
-        
-        // Map to keep preliminary count of revisted branches
-        structures.prelSizeMap.set(mapKey, 0);
 
         if (query.length > 1) {
             // The (sub)query is a concatenation of multiple (sub)queries
@@ -194,10 +190,8 @@ async function populateDataStructures(structures, u, uType, query, parentForReso
     else {
         /* The query already exists in labels for this node */
         structures.hits += 1;
-        let prelSize = structures.prelSizeMap.get(mapKey);
-        //structures.globalSize += prelSize;
         structures.sizeMap.get(mapKey)
-            .then(size => structures.globalSize += size) // - prelSize);
+            .then(size => structures.globalSize += size);
         return structures.sizeMap.get(mapKey);
     }
 }
@@ -228,7 +222,6 @@ function initializeDataStructures(resultMap, mapKey) {
 async function updateDataStructuresForAllSubqueries(structures, query, mapKey, u, uType, parentForResolvers, calculationContext, path) {
     // add 1 for each comma
     structures.globalSize += query.length - 1;
-    structures.prelSizeMap[mapKey] += query.length - 1;
 
     return Promise.all(query.map((subquery, index) => {
         // abort resolving array of queries
@@ -260,18 +253,12 @@ async function updateDataStructuresForAllSubqueries(structures, query, mapKey, u
  */
 function updateDataStructuresForScalarField(structures, mapKey, uType, subquery, parentForResolvers, calculationContext, path) {
     // add for field name and ':'
-    structures.globalSize += 2;
-    structures.prelSizeMap[mapKey] += 2;
-    
     let fieldName = subquery.name.value;
     let fieldDef = uType.getFields()[fieldName];
     if (fieldDef == undefined) {
         fieldDef = getFieldDef(calculationContext.schema, uType, fieldName);
     }
     path = extendPath(path, fieldName);
-    if(checkTermination(structures, calculationContext)){
-        return Promise.resolve(0);
-    }
     return resolveField(subquery, uType, fieldDef, parentForResolvers, calculationContext, path, structures)
         .then(result => {
             return updateDataStructuresForScalarFieldValue(structures, mapKey, result, fieldName, calculationContext);
@@ -299,7 +286,6 @@ function updateDataStructuresForScalarFieldValue(structures, mapKey, result, fie
         size += 1;
     }
     structures.globalSize += size;
-    structures.prelSizeMap[mapKey] += size;
     const sizePromise = Promise.resolve(size);
 
     let value;
@@ -338,7 +324,6 @@ function updateDataStructuresForScalarFieldValue(structures, mapKey, result, fie
 function updateDataStructuresForObjectField(structures, mapKey, uType, subquery, parentForResolvers, calculationContext, path) {
     // add for field name and ':'
     structures.globalSize += 2;
-    structures.prelSizeMap[mapKey] += 2;
     
     let fieldName = subquery.name.value;
     let fieldDef = uType.getFields()[fieldName];
@@ -366,11 +351,9 @@ async function updateDataStructuresForObjectFieldResult(result, structures, mapK
     if (result == null) {
         // add 1 for null
         structures.globalSize += 1;
-        structures.prelSizeMap[mapKey] += 1;
     } else if(Array.isArray(result)) {
         // add for '[' and ']' and for commas
         structures.globalSize += 2 + result.length - 1;
-        structures.prelSizeMap[mapKey] += 2 + result.length - 1;
     }
     
     // update uType for the following recursion
@@ -416,7 +399,6 @@ async function updateDataStructuresForObjectFieldResult(result, structures, mapK
 function updateDataStructuresForObjectFieldResultItem(structures, subquery, relatedNodeType, fieldDef, mapKey, parentForResolvers, calculationContext, path) {
     // add 2 for '{' and '}'
     structures.globalSize += 2;
-    structures.prelSizeMap[mapKey] += 2;
 
     let relatedNode = createNode(parentForResolvers, fieldDef);
     let mapKeyForRelatedNode = getMapKey(relatedNode, subquery.selectionSet.selections);
