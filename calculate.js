@@ -459,7 +459,6 @@ function resolveField(subquery, nodeType, fieldDef, parentForResolvers, calculat
     
     return limit(() => {
         if(checkTermination(structures, calculationContext)){
-            limit.clearQueue();
             return Promise.resolve(null);
         }
         return resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info);
