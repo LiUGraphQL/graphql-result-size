@@ -1,4 +1,3 @@
-import pLimit from 'p-limit';
 import _ from 'lodash';
 import deleteKey from 'key-del';
 import { print } from 'graphql';
@@ -15,8 +14,6 @@ import {
 } from 'graphql/execution/execute.js';
 import { getArgumentValues } from 'graphql/execution/values.js';
 import { ApolloError } from 'apollo-server-errors';
-
-const limit = pLimit(20);
 
 /**
  * Initializes the label, size, and result maps, and runs the calculate function
@@ -457,12 +454,13 @@ function resolveField(subquery, nodeType, fieldDef, parentForResolvers, calculat
     let info = buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, nodeType, path);
     let args = (0, getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
     
-    return limit(() => {
+
+    return new Promise((resolve, reject) => {
         if(checkTermination(structures, calculationContext)){
-            return Promise.resolve(null);
+            resolve(null);
         }
-        return resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info);
-    });
+        resolve(resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info));
+      });
 }
 
 /** Produces the result from the results structure into a string.
@@ -479,7 +477,7 @@ function produceResult(resultMap, index) {
     resultMap.get(index).forEach(element => {
         if (Array.isArray(element) && element.length > 1) {
             _.forEach(element, (subElement) => {
-                response += subElement;
+                response += subElement;q
             });
         } else if (typeof element === "object" && element !== null) {
             response += produceResult(resultMap, element[0]);
