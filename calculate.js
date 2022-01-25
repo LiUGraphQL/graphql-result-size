@@ -90,7 +90,8 @@ function queryCalculator(requestContext) {
             
             if(calculationContext.errorCode){
                 response.errorCode = calculationContext.errorCode;
-            } else if (resultSize > calculationContext.threshold) {
+            } else if (calculationContext.threshold != 0
+                       && resultSize > calculationContext.threshold) {
                 response.errorCode = 'RESULT_SIZE_LIMIT_EXCEEDED';
             }
 
@@ -438,6 +439,7 @@ function checkTermination(structures, calculationContext){
     if(calculationContext.errorCode){
         return true;
     } else if(calculationContext.terminateEarly
+              && calculationContext.threshold != 0
               && structures.globalSize > calculationContext.threshold) {
         calculationContext.errorCode = 'EARLY_TERMINATION_RESULT_SIZE_LIMIT_EXCEEDED';
         calculationContext.earlyTerminationTimestamp = performance.now();
