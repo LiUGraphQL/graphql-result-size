@@ -81,7 +81,6 @@ function queryCalculator(requestContext) {
             let response = {
                 resultSize,
                 cacheHits: structures.hits,
-                resultSizeLimit: calculationContext.threshold,
                 calculationTime: performance.now() - startTime,
                 timeout: contextValue.timeout,
                 threshold: calculationContext.threshold,
