@@ -2,7 +2,7 @@ import _ from 'lodash';
 import deleteKey from 'key-del';
 import { print } from 'graphql';
 import pLimit from 'p-limit';
-const limit = pLimit(10);
+const limit = pLimit(1);
 import {
     createNode,
     getRootNode,
@@ -222,11 +222,6 @@ async function updateDataStructuresForAllSubqueries(structures, query, mapKey, u
     structures.globalSize += query.length - 1;
 
     return Promise.all(query.map((subquery, index) => {
-        // abort resolving array of queries
-        if(checkTermination(structures, calculationContext)){
-            return Promise.resolve(0);
-        }
-
         if (index !== 0) {
             structures.resultMap.get(mapKey).push(",");
         }
@@ -326,9 +321,6 @@ function updateDataStructuresForObjectField(structures, mapKey, uType, subquery,
     let fieldName = subquery.name.value;
     let fieldDef = uType.getFields()[fieldName];
     path = extendPath(path, fieldName);
-    if(checkTermination(structures, calculationContext)){
-        return Promise.resolve(0);
-    }
     return resolveField(subquery, uType, fieldDef, parentForResolvers, calculationContext, path, structures)
         .then(result => {
             // extend data structures to capture field name and colon
@@ -366,11 +358,6 @@ async function updateDataStructuresForObjectFieldResult(result, structures, mapK
     } else if (Array.isArray(result)) {
         structures.resultMap.get(mapKey).push("[");
         return Promise.all(result.map((resultItem, index) => {
-            // abort resolving array of queries
-            if(checkTermination(structures, calculationContext)){
-                return Promise.resolve(0);
-            }
-
             if (index !== 0) {
                 structures.resultMap.get(mapKey).push(",");
             }
