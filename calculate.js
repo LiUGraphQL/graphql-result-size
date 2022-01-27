@@ -455,7 +455,7 @@ function resolveField(subquery, nodeType, fieldDef, parentForResolvers, calculat
     let info = buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, nodeType, path);
     let args = (0, getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
     
-    return resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info);
+    return Promise.resolve(resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info));
 }
 
 /** Produces the result from the results structure into a string.
