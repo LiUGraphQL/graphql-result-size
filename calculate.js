@@ -19,9 +19,9 @@ import { ApolloError } from 'apollo-server-errors';
 /**
  * Initializes the label, size, and result maps, and runs the calculate function
  * with the top level query and root node.
- * 
+ *
  * Throws an error if the resulting size is above the given threshold.
- * 
+ *
  * @param  {object} requestContext contains query and GraphQL schema
  * @return {object}                returns the query result in JSON format
  */
@@ -29,7 +29,7 @@ function queryCalculator(requestContext) {
     // Start time
     const startTime = performance.now();
 
-    // Build execution context 
+    // Build execution context
     const { request, document } = requestContext;
     const variableValues = request.variables;
     const operationName = request.operationName;
@@ -80,14 +80,14 @@ function queryCalculator(requestContext) {
             }
 
             let response = {
-                resultSize,
+                resultSize: Math.max(resultSize, structures.globalSize),
                 cacheHits: structures.hits,
                 calculationTime: performance.now() - startTime,
                 timeout: contextValue.timeout,
                 threshold: calculationContext.threshold,
                 terminateEarly: calculationContext.terminateEarly
             }
-            
+
             if(calculationContext.errorCode){
                 response.errorCode = calculationContext.errorCode;
             } else if (calculationContext.threshold != 0
@@ -130,8 +130,8 @@ function getMapKey(u, query) {
  *
  * Based on an extended version of Algorithm 2 in the research paper "Semantics and Complexity of GraphQL"
  * by Olaf Hartig and Jorge Pérez. The extended version combines the calculation algorithm from the original
- * paper with gathering additional data that can be used to produce the query results without accessing the 
- * underlying data source again. A detailed explanation of this algorithm can be found in the Master's thesis 
+ * paper with gathering additional data that can be used to produce the query results without accessing the
+ * underlying data source again. A detailed explanation of this algorithm can be found in the Master's thesis
  * "Combining Result Size Estimation and Query Execution for the GraphQL Query Language" by Andreas Lundquist.
  *
  * @param  {object} structures          contains three map structures: labels, sizes and results
@@ -186,7 +186,7 @@ async function populateDataStructures(structures, u, uType, query, parentForReso
             // (this corresponds to line 40 in the pseudo code of the algorithm)
             sizePromise = updateDataStructuresForInlineFragment(structures, mapKey, u, uType, query[0], parentForResolvers, calculationContext, path);
         }
-        
+
         structures.sizeMap.set(mapKey, sizePromise);
         return sizePromise;
     }
@@ -267,7 +267,7 @@ function updateDataStructuresForScalarField(structures, mapKey, uType, subquery,
 /**
  * Used by updateDataStructuresForScalarField.
  */
-function updateDataStructuresForScalarFieldValue(structures, mapKey, result, fieldName, calculationContext) {    
+function updateDataStructuresForScalarFieldValue(structures, mapKey, result, fieldName, calculationContext) {
     // field name and ':'
     let size = 2;
     if (Array.isArray(result)) {
@@ -306,7 +306,7 @@ function updateDataStructuresForScalarFieldValue(structures, mapKey, result, fie
     } else {
         value = result;
     }
-    
+
     if (typeof value === "string") {
         value = "\"" + value + "\"";
     }
@@ -323,7 +323,7 @@ function updateDataStructuresForScalarFieldValue(structures, mapKey, result, fie
 function updateDataStructuresForObjectField(structures, mapKey, uType, subquery, parentForResolvers, calculationContext, path) {
     // add for field name and ':'
     structures.globalSize += 2;
-    
+
     let fieldName = subquery.name.value;
     let fieldDef = uType.getFields()[fieldName];
     path = extendPath(path, fieldName);
@@ -356,7 +356,7 @@ async function updateDataStructuresForObjectFieldResult(result, structures, mapK
     if(checkTermination(structures, calculationContext, result.length)){ // add for value (at 1 each)
         return Promise.resolve(0);
     }
-    
+
     // update uType for the following recursion
     const relatedNodeType = (fieldDef.astNode.type.kind === 'ListType') ?
         fieldDef.type.ofType :
@@ -403,7 +403,7 @@ function updateDataStructuresForObjectFieldResultItem(structures, subquery, rela
     structures.resultMap.get(mapKey).push("{");
     structures.resultMap.get(mapKey).push([mapKeyForRelatedNode]);
     structures.resultMap.get(mapKey).push("}");
-    
+
     // get into the recursion for the given result item
     return populateDataStructures(structures, relatedNode, relatedNodeType, subquery.selectionSet.selections, parentForResolvers, calculationContext, path)
         .then(subquerySize => {
@@ -454,8 +454,8 @@ function resolveField(subquery, nodeType, fieldDef, parentForResolvers, calculat
     let resolveFn = fieldDef.resolve;
     let info = buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, nodeType, path);
     let args = (0, getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
-    
-    return resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info);
+
+    return Promise.resolve(resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info));
 }
 
 /** Produces the result from the results structure into a string.
