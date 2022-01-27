@@ -150,6 +150,11 @@ async function populateDataStructures(structures, u, uType, query, parentForReso
     const subqueryAsString = JSON.stringify(query);
     const curnodeAsString = JSON.stringify(u);
 
+    // abort?
+    if(checkTermination(structures, calculationContext)){
+        return Promise.resolve(0);
+    }
+
     // Check whether the given (sub)query has already been considered for the
     // given data node, which is recorded in the 'labels' data structure
     // (this corresponds to line 1 in the pseudo code of the algorithm)
@@ -188,8 +193,9 @@ async function populateDataStructures(structures, u, uType, query, parentForReso
     else {
         /* The query already exists in labels for this node */
         structures.hits += 1;
+        structures.globalSize += 3; // add for field name, ':' and value (assume null)
         structures.sizeMap.get(mapKey)
-            .then(size => structures.globalSize += size);
+            .then(size => structures.globalSize += size - 3);
         return structures.sizeMap.get(mapKey);
     }
 }
@@ -345,6 +351,11 @@ async function updateDataStructuresForObjectFieldResult(result, structures, mapK
         // add for '[' and ']' and for commas
         structures.globalSize += 2 + result.length - 1;
     }
+
+    // make a low estimate of the remaining size in this branch and check if we can terminate (useful if long list requested)
+    if(checkTermination(structures, calculationContext, result.length)){ // add for value (at 1 each)
+        return Promise.resolve(0);
+    }
     
     // update uType for the following recursion
     const relatedNodeType = (fieldDef.astNode.type.kind === 'ListType') ?
@@ -421,15 +432,16 @@ function extendPath(prev, key) {
     return { prev: prev, key: key };
 }
 
-function checkTermination(structures, calculationContext){
+function checkTermination(structures, calculationContext, extra){
     // check for results size exception
     if(calculationContext.errorCode){
         return true;
     } else if(calculationContext.terminateEarly
               && calculationContext.threshold != 0
-              && structures.globalSize > calculationContext.threshold) {
+              && structures.globalSize + extra > calculationContext.threshold) {
         calculationContext.errorCode = 'EARLY_TERMINATION_RESULT_SIZE_LIMIT_EXCEEDED';
         calculationContext.earlyTerminationTimestamp = performance.now();
+        structures.globalSize += extra;
         return true;
     }
     return false;
@@ -443,12 +455,7 @@ function resolveField(subquery, nodeType, fieldDef, parentForResolvers, calculat
     let info = buildResolveInfo(calculationContext.exeContext, fieldDef, calculationContext.fieldNodes, nodeType, path);
     let args = (0, getArgumentValues(fieldDef, subquery, calculationContext.exeContext.variableValues));
     
-    return limit(() => {
-        if(checkTermination(structures, calculationContext)){
-            return Promise.resolve(null);
-        }
-        return resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info);
-    });
+    return resolveFn(parentForResolvers, args, calculationContext.exeContext.contextValue, info);
 }
 
 /** Produces the result from the results structure into a string.
